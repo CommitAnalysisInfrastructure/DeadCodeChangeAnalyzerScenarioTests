@@ -1,0 +1,23 @@
+commit efde611.txt
+Merge: 7a7c1705dc6c 3d780b926a12
+Author: David S. Miller <davem@davemloft.net>
+Date:   Sat Apr 16 22:34:40 2016 -0400
+
+    Merge branch 'nfp-next'
+    
+    Jakub Kicinski says
+    
+    ====================
+    nfp: cleanups and improvements
+    
+    Main purpose of this set is to get rid of doing potentially long
+    mdelay()s but it also contains some trivial changes I've accumulated.
+    First two patches fix harmless copy-paste errors, next two clean up
+    the documentation and remove unused defines.  Patch 5 clarifies the
+    interpretation of RX descriptor fields.  Patch 6, by far the biggest,
+    adds ability to perform FW reconfig asynchronously thanks to which
+    we can stop using mdelay().
+    ====================
+    
+    Signed-off-by: David S. Miller <davem@davemloft.net>
+

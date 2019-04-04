@@ -1,0 +1,30 @@
+commit 79c7c7a.txt
+Merge: 3f5e4a311619 990486c8af04
+Author: Linus Torvalds <torvalds@linux-foundation.org>
+Date:   Wed Oct 7 09:52:42 2015 +0100
+
+    Merge branch 'strscpy' of git://git.kernel.org/pub/scm/linux/kernel/git/cmetcalf/linux-tile
+    
+    Pull strscpy fixes from Chris Metcalf :
+     "This patch series fixes up a couple of architecture issues where
+      strscpy wasn't configured correctly (missing on h8300, duplicating
+      local and asm-generic copies on powerpc and tile).
+    
+      It also adds a use of zero_bytemask() to the final store for strscpy
+      to avoid writing uninitialized data to the destination.  However, to
+      make this work we had to add support for zero_bytemask() to the two
+      architectures that didn't have it (alpha and tile), because they were
+      providing their own local copies, but didn't provide the
+      zero_bytemask() that was previously only required when building with
+      CONFIG_DCACHE_WORD_ACCESS"
+    
+    [ Side note: there is still no actual users of strscpy except for the
+      one preexisting use in arch/tile that predates the generic version.
+      So this is all about fixing the infrastructure so that we eventually
+      can start using it.  - Linus ]
+    
+    * 'strscpy' of git://git.kernel.org/pub/scm/linux/kernel/git/cmetcalf/linux-tile:
+      strscpy: zero any trailing garbage bytes in the destination
+      word-at-a-time.h: support zero_bytemask() on alpha and tile
+      word-at-a-time.h: fix some Kbuild files
+
