@@ -1,0 +1,1139 @@
+commit 9855895.txt
+Author: Icarus Chau <ichau@broadcom.com>
+Date:   Tue Mar 3 19:36:03 2015 -0800
+
+    broadcom/cygnus: Enable gpio on romstage
+    
+    BUG=chrome-os-partner:35936
+    BRANCH=broadcom-firmware
+    TEST=When enable configuration CYGNUS_GPIO_TEST,
+    print on console:
+    
+    Start gpio test...
+    [gpio_crmu] gpio:0 set input
+    [gpio_crmu] gpio:0 set pullup:0
+    GPIO get 170=0
+    gpio request enable pin=64 offset=0x1c
+    ....
+    GPIO set 69=1
+    [gpio_asiu] gpio:45 set, value:0
+    GPIO set 69=0
+    Gpio test completed...
+    
+    Additional test:
+    Measure on GPIO 69 to confirm the voltage
+    change.
+    Apply voltage on AON_GPIO0 to check reading.
+    
+    Change-Id: I634cffccc7f0fa198317a92e3f1670ae6828892e
+    Signed-off-by: Patrick Georgi <pgeorgi@chromium.org>
+    Original-Commit-Id: 4784e5d88b9f7acb70bd6f6b12b1096f092f34b8
+    Original-Signed-off-by: Icarus Chau <ichau@broadcom.com>
+    Original-Reviewed-on: https://chrome-internal-review.googlesource.com/204537
+    Original-Reviewed-by: Daisuke Nojiri <dnojiri@google.com>
+    Original-Change-Id: Ia4f833be80d7844c2d014c9ffcf587d385e7766c
+    Original-Reviewed-on: https://chromium-review.googlesource.com/263495
+    Original-Reviewed-by: Daisuke Nojiri <dnojiri@chromium.org>
+    Original-Commit-Queue: Daisuke Nojiri <dnojiri@chromium.org>
+    Original-Trybot-Ready: Daisuke Nojiri <dnojiri@chromium.org>
+    Original-Tested-by: Daisuke Nojiri <dnojiri@chromium.org>
+    Reviewed-on: http://review.coreboot.org/9907
+    Tested-by: build bot (Jenkins)
+    Reviewed-by: Stefan Reinauer <stefan.reinauer@coreboot.org>
+
+diff --git a/src/soc/broadcom/cygnus/Kconfig b/src/soc/broadcom/cygnus/Kconfig
+index 468f2efc5c..821b2dc39c 100644
+--- a/src/soc/broadcom/cygnus/Kconfig
++++ b/src/soc/broadcom/cygnus/Kconfig
+@@ -1,65 +1,70 @@
+ ##
+ ## This file is part of the coreboot project.
+ ##
+ ## Copyright 2014 Google Inc.
+ ##
+ ## This program is free software; you can redistribute it and/or modify
+ ## it under the terms of the GNU General Public License as published by
+ ## the Free Software Foundation; version 2 of the License.
+ ##
+ ## This program is distributed in the hope that it will be useful,
+ ## but WITHOUT ANY WARRANTY; without even the implied warranty of
+ ## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ ## GNU General Public License for more details.
+ ##
+ ## You should have received a copy of the GNU General Public License
+ ## along with this program; if not, write to the Free Software
+ ## Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ ##
+ 
+ config SOC_BROADCOM_CYGNUS
+ 	bool
+ 	default n
+ 	select ARCH_BOOTBLOCK_ARMV7
+ 	select ARCH_RAMSTAGE_ARMV7
+ 	select ARCH_ROMSTAGE_ARMV7
+ 	select ARCH_VERSTAGE_ARMV7
+ 	select BOOTBLOCK_CONSOLE
+ 	select CPU_HAS_BOOTBLOCK_INIT
+ 	select DYNAMIC_CBMEM
+ 	select EARLY_CONSOLE
+ 	select GENERIC_UDELAY
+ 	select HAVE_MONOTONIC_TIMER
+ 	select HAVE_UART_MEMORY_MAPPED
+ 	select HAVE_UART_SPECIAL
+ 	select HAS_PRECBMEM_TIMESTAMP_REGION
+ 	select RETURN_FROM_VERSTAGE
+ 	select GENERIC_GPIO_LIB
+ 
+ if SOC_BROADCOM_CYGNUS
+ 
+ config BOOTBLOCK_CPU_INIT
+ 	string
+ 	default "soc/broadcom/cygnus/bootblock.c"
+ 
+ config CONSOLE_SERIAL_UART_ADDRESS
+ 	hex
+ 	depends on DRIVERS_UART
+ 	default 0x18023000
+ 
+ config CYGNUS_DDR800
+ 	bool "DDR Speed at 800MHz"
+ 	default y
+ 
+ config CYGNUS_SHMOO_REUSE_DDR_32BIT
+ 	bool "Indicate if DDR width is 32-bit"
+ 	default n
+ 
+ config CYGNUS_SDRAM_TEST_DDR
+ 	bool "Run a write-read test on DDR after initialization"
+ 	default n
+ 
+ config CYGNUS_PRINT_SHMOO_DEBUG
+ 	bool "Print debug info for shmoo"
+ 	default n
++
++config CYGNUS_GPIO_TEST
++	bool "Run a test on gpio"
++	default n
++
+ endif
+diff --git a/src/soc/broadcom/cygnus/Makefile.inc b/src/soc/broadcom/cygnus/Makefile.inc
+index cac9062f76..a1459c0790 100644
+--- a/src/soc/broadcom/cygnus/Makefile.inc
++++ b/src/soc/broadcom/cygnus/Makefile.inc
+@@ -1,60 +1,62 @@
+ ##
+ ## This file is part of the coreboot project.
+ ##
+ ## Copyright 2015 Google Inc.
+ ##
+ ## This program is free software; you can redistribute it and/or modify
+ ## it under the terms of the GNU General Public License as published by
+ ## the Free Software Foundation; version 2 of the License.
+ ##
+ ## This program is distributed in the hope that it will be useful,
+ ## but WITHOUT ANY WARRANTY; without even the implied warranty of
+ ## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ ## GNU General Public License for more details.
+ ##
+ ## You should have received a copy of the GNU General Public License
+ ## along with this program; if not, write to the Free Software
+ ## Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ ##
+ 
+ bootblock-y += bootblock.c
+ bootblock-y += cbmem.c
+ bootblock-y += i2c.c
+ bootblock-y += timer.c
+ bootblock-$(CONFIG_SPI_FLASH) += spi.c
+ ifeq ($(CONFIG_BOOTBLOCK_CONSOLE),y)
+ bootblock-$(CONFIG_DRIVERS_UART) += ns16550.c
+ endif
+ 
+ verstage-y += i2c.c
+ verstage-y += timer.c
+ verstage-$(CONFIG_SPI_FLASH) += spi.c
+ verstage-$(CONFIG_DRIVERS_UART) += ns16550.c
+ 
+ romstage-y += cbmem.c
+ romstage-y += i2c.c
+ romstage-y += timer.c
+ romstage-y += romstage.c
+ romstage-y += sdram.c
+ romstage-$(CONFIG_SPI_FLASH) += spi.c
+ romstage-$(CONFIG_DRIVERS_UART) += ns16550.c
+ romstage-y += ddr_init.c
+ romstage-y += ddr_init_table.c
+ romstage-y += shmoo_and28.c
+ romstage-y += phy_reg_access.c
+ romstage-y += ydc_ddr_bist.c
+ romstage-y += timer.c
++romstage-y += gpio.c
++romstage-y += iomux.c
+ 
+ ramstage-y += cbmem.c
+ ramstage-y += i2c.c
+ ramstage-y += sdram.c
+ ramstage-y += soc.c
+ ramstage-y += timer.c
+ ramstage-$(CONFIG_SPI_FLASH) += spi.c
+ ramstage-$(CONFIG_DRIVERS_UART) += ns16550.c
+ 
+ CPPFLAGS_common += -Isrc/soc/broadcom/cygnus/include/
+ 
+ $(objcbfs)/bootblock.bin: $(objcbfs)/bootblock.elf
+ 	@printf "    OBJCOPY    $(subst $(obj)/,,$(@))\n"
+ 	$(OBJCOPY_bootblock) -O binary $< $@
+diff --git a/src/soc/broadcom/cygnus/gpio.c b/src/soc/broadcom/cygnus/gpio.c
+new file mode 100644
+index 0000000000..9c4ef24079
+--- /dev/null
++++ b/src/soc/broadcom/cygnus/gpio.c
+@@ -0,0 +1,501 @@
++/*
++* Copyright (C) 2015 Broadcom Corporation
++*
++* This program is free software; you can redistribute it and/or
++* modify it under the terms of the GNU General Public License as
++* published by the Free Software Foundation version 2.
++*
++* This program is distributed "as is" WITHOUT ANY WARRANTY of any
++* kind, whether express or implied; without even the implied warranty
++* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++* GNU General Public License for more details.
++*/
++
++#include <arch/io.h>
++#include <console/console.h>
++#include <gpio.h>
++#include <stdlib.h>
++#include <delay.h>
++
++#define dev_dbg(chip, fmt, args...) printk(BIOS_DEBUG, "[%s] " fmt, \
++	chip->label, args)
++
++#define CYGNUS_GPIO_DATA_IN_OFFSET   0x00
++#define CYGNUS_GPIO_DATA_OUT_OFFSET  0x04
++#define CYGNUS_GPIO_OUT_EN_OFFSET    0x08
++#define CYGNUS_GPIO_IN_TYPE_OFFSET   0x0c
++#define CYGNUS_GPIO_INT_DE_OFFSET    0x10
++#define CYGNUS_GPIO_INT_EDGE_OFFSET  0x14
++#define CYGNUS_GPIO_INT_MSK_OFFSET   0x18
++#define CYGNUS_GPIO_INT_STAT_OFFSET  0x1c
++#define CYGNUS_GPIO_INT_MSTAT_OFFSET 0x20
++#define CYGNUS_GPIO_INT_CLR_OFFSET   0x24
++#define CYGNUS_GPIO_PAD_RES_OFFSET   0x34
++#define CYGNUS_GPIO_RES_EN_OFFSET    0x38
++
++/* drive strength control for ASIU GPIO */
++#define CYGNUS_GPIO_ASIU_DRV0_CTRL_OFFSET 0x58
++
++/* drive strength control for CCM/CRMU (AON) GPIO */
++#define CYGNUS_GPIO_DRV0_CTRL_OFFSET  0x00
++
++#define GPIO_BANK_SIZE 0x200
++#define NGPIOS_PER_BANK 32
++#define GPIO_BANK(pin) ((pin) / NGPIOS_PER_BANK)
++
++#define CYGNUS_GPIO_REG(pin, reg) (GPIO_BANK(pin) * GPIO_BANK_SIZE + (reg))
++#define CYGNUS_GPIO_SHIFT(pin) ((pin) % NGPIOS_PER_BANK)
++
++#define GPIO_DRV_STRENGTH_BIT_SHIFT  20
++#define GPIO_DRV_STRENGTH_BITS       3
++#define GPIO_DRV_STRENGTH_BIT_MASK   ((1 << GPIO_DRV_STRENGTH_BITS) - 1)
++
++/*
++ * Cygnus GPIO core
++ *
++ * @base: I/O register base for Cygnus GPIO controller
++ * @io_ctrl: I/O register base for certain type of Cygnus GPIO controller that
++ * has the PINCONF support implemented outside of the GPIO block
++ * @num_banks: number of GPIO banks, each bank supports up to 32 GPIOs
++ * @pinmux_is_supported: flag to indicate this GPIO controller contains pins
++ * that can be individually muxed to GPIO
++ * @pctl_priv: pointer to pinctrl handle
++ */
++struct cygnus_gpio {
++	void		*base;
++	void		*io_ctrl;
++	const char	*label;
++	int			gpio_base;
++	u16			ngpio;
++	unsigned	num_banks;
++	int			pinmux_is_supported;
++	void		*pctl_priv;
++};
++
++/*
++ * GPIO cores table
++ *
++ * Cygnus has 3 gpio cores. The tables contains descriptors of those cores.
++ */
++struct cygnus_gpio cygnus_gpio_table[] = {
++	{
++		.base = (void *)0x03024800,
++		.io_ctrl = (void *)0x03024008,
++		.label = "gpio_crmu",
++		.gpio_base = 170,
++		.ngpio = 6,
++	},
++	{
++		.base = (void *)0x1800a000,
++		.io_ctrl = (void *)0x0301d164,
++		.label = "gpio_ccm",
++		.gpio_base = 0,
++		.ngpio = 24,
++	},
++	{
++		.base = (void *)0x180a5000,
++		.label = "gpio_asiu",
++		.gpio_base = 24,
++		.ngpio = 146,
++		.pinmux_is_supported = 1
++	}
++};
++
++/*
++ * Map a GPIO in the local gpio_chip pin space to a pin in the Cygnus IOMUX
++ * pinctrl pin space
++ */
++struct cygnus_gpio_pin_range {
++	unsigned offset;
++	unsigned pin_base;
++	unsigned num_pins;
++};
++
++#define CYGNUS_PINRANGE(o, p, n) { .offset = o, .pin_base = p, .num_pins = n }
++
++/*
++ * Pin mapping table for mapping local GPIO pins to Cygnus IOMUX pinctrl pins.
++ * This is for ASIU gpio. The offset is based on ASIU gpios.
++ */
++static const struct cygnus_gpio_pin_range cygnus_gpio_pintable[] = {
++	CYGNUS_PINRANGE(0, 42, 1),
++	CYGNUS_PINRANGE(1, 44, 3),
++	CYGNUS_PINRANGE(4, 48, 1),
++	CYGNUS_PINRANGE(5, 50, 3),
++	CYGNUS_PINRANGE(8, 126, 1),
++	CYGNUS_PINRANGE(9, 155, 1),
++	CYGNUS_PINRANGE(10, 152, 1),
++	CYGNUS_PINRANGE(11, 154, 1),
++	CYGNUS_PINRANGE(12, 153, 1),
++	CYGNUS_PINRANGE(13, 127, 3),
++	CYGNUS_PINRANGE(16, 140, 1),
++	CYGNUS_PINRANGE(17, 145, 7),
++	CYGNUS_PINRANGE(24, 130, 10),
++	CYGNUS_PINRANGE(34, 141, 4),
++	CYGNUS_PINRANGE(38, 54, 1),
++	CYGNUS_PINRANGE(39, 56, 3),
++	CYGNUS_PINRANGE(42, 60, 3),
++	CYGNUS_PINRANGE(45, 64, 3),
++	CYGNUS_PINRANGE(48, 68, 2),
++	CYGNUS_PINRANGE(50, 84, 6),
++	CYGNUS_PINRANGE(56, 94, 6),
++	CYGNUS_PINRANGE(62, 72, 1),
++	CYGNUS_PINRANGE(63, 70, 1),
++	CYGNUS_PINRANGE(64, 80, 1),
++	CYGNUS_PINRANGE(65, 74, 3),
++	CYGNUS_PINRANGE(68, 78, 1),
++	CYGNUS_PINRANGE(69, 82, 1),
++	CYGNUS_PINRANGE(70, 156, 17),
++	CYGNUS_PINRANGE(87, 104, 12),
++	CYGNUS_PINRANGE(99, 102, 2),
++	CYGNUS_PINRANGE(101, 90, 4),
++	CYGNUS_PINRANGE(105, 116, 10),
++	CYGNUS_PINRANGE(123, 11, 1),
++	CYGNUS_PINRANGE(124, 38, 4),
++	CYGNUS_PINRANGE(128, 43, 1),
++	CYGNUS_PINRANGE(129, 47, 1),
++	CYGNUS_PINRANGE(130, 49, 1),
++	CYGNUS_PINRANGE(131, 53, 1),
++	CYGNUS_PINRANGE(132, 55, 1),
++	CYGNUS_PINRANGE(133, 59, 1),
++	CYGNUS_PINRANGE(134, 63, 1),
++	CYGNUS_PINRANGE(135, 67, 1),
++	CYGNUS_PINRANGE(136, 71, 1),
++	CYGNUS_PINRANGE(137, 73, 1),
++	CYGNUS_PINRANGE(138, 77, 1),
++	CYGNUS_PINRANGE(139, 79, 1),
++	CYGNUS_PINRANGE(140, 81, 1),
++	CYGNUS_PINRANGE(141, 83, 1),
++	CYGNUS_PINRANGE(142, 10, 1)
++};
++
++static unsigned cygnus_gpio_to_pin(unsigned gpio)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(cygnus_gpio_pintable); i++) {
++		const struct cygnus_gpio_pin_range *range = cygnus_gpio_pintable
++			+ i;
++
++		if ((gpio < range->offset) ||
++			(gpio >= (range->offset + range->num_pins)))
++			continue;
++
++		return range->pin_base + (gpio - range->offset);
++	}
++	return -1;
++}
++
++static struct cygnus_gpio *cygnus_get_gpio_core(unsigned gpio,
++	unsigned *gpio_offset)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(cygnus_gpio_table); i++) {
++		struct cygnus_gpio *chip = cygnus_gpio_table + i;
++
++		if ((gpio < chip->gpio_base) ||
++			(gpio >= (chip->gpio_base + chip->ngpio)))
++			continue;
++
++		*gpio_offset = gpio - chip->gpio_base;
++		return chip;
++	}
++
++	return NULL;
++}
++
++static u32 cygnus_readl(struct cygnus_gpio *chip, unsigned int offset)
++{
++	return read32(chip->base + offset);
++}
++
++static void cygnus_writel(struct cygnus_gpio *chip, unsigned int offset,
++			  u32 val)
++{
++	write32(chip->base + offset, val);
++}
++
++/**
++ *  cygnus_set_bit - set or clear one bit (corresponding to the GPIO pin) in a
++ *  Cygnus GPIO register
++ *
++ *  @cygnus_gpio: Cygnus GPIO device
++ *  @reg: register offset
++ *  @gpio: GPIO pin
++ *  @set: set or clear. 1 - set; 0 -clear
++ */
++static void cygnus_set_bit(struct cygnus_gpio *chip, unsigned int reg,
++			   unsigned gpio, int set)
++{
++	unsigned int offset = CYGNUS_GPIO_REG(gpio, reg);
++	unsigned int shift = CYGNUS_GPIO_SHIFT(gpio);
++	u32 val;
++
++	val = cygnus_readl(chip, offset);
++	if (set)
++		val |= BIT(shift);
++	else
++		val &= ~BIT(shift);
++	cygnus_writel(chip, offset, val);
++}
++
++static int cygnus_get_bit(struct cygnus_gpio *chip, unsigned int reg,
++			  unsigned gpio)
++{
++	unsigned int offset = CYGNUS_GPIO_REG(gpio, reg);
++	unsigned int shift = CYGNUS_GPIO_SHIFT(gpio);
++	u32 val;
++
++	val = cygnus_readl(chip, offset) & BIT(shift);
++	if (val)
++		return 1;
++	else
++		return 0;
++}
++
++/*
++ * Request the Cygnus IOMUX pinmux controller to mux individual pins to GPIO
++ */
++static int cygnus_gpio_request(struct cygnus_gpio *chip, unsigned offset)
++{
++	/* not all Cygnus GPIO pins can be muxed individually */
++	if (!chip->pinmux_is_supported || (chip->pctl_priv == NULL))
++		return 0;
++
++	return cygnus_gpio_request_enable(chip->pctl_priv,
++		cygnus_gpio_to_pin(offset));
++}
++
++static void cygnus_gpio_free(struct cygnus_gpio *chip, unsigned offset)
++{
++	if (!chip->pinmux_is_supported || (chip->pctl_priv == NULL))
++		return;
++
++	cygnus_gpio_disable_free(chip->pctl_priv, cygnus_gpio_to_pin(offset));
++}
++
++static int cygnus_gpio_direction_input(struct cygnus_gpio *chip, unsigned gpio)
++{
++	cygnus_set_bit(chip, CYGNUS_GPIO_OUT_EN_OFFSET, gpio, 0);
++
++	dev_dbg(chip, "gpio:%u set input\n", gpio);
++
++	return 0;
++}
++
++static int cygnus_gpio_direction_output(struct cygnus_gpio *chip, unsigned gpio,
++					int value)
++{
++	cygnus_set_bit(chip, CYGNUS_GPIO_OUT_EN_OFFSET, gpio, 1);
++	cygnus_set_bit(chip, CYGNUS_GPIO_DATA_OUT_OFFSET, gpio, value);
++
++	dev_dbg(chip, "gpio:%u set output, value:%d\n", gpio, value);
++
++	return 0;
++}
++
++static void cygnus_gpio_set(struct cygnus_gpio *chip, unsigned gpio, int value)
++{
++	cygnus_set_bit(chip, CYGNUS_GPIO_DATA_OUT_OFFSET, gpio, value);
++
++	dev_dbg(chip, "gpio:%u set, value:%d\n", gpio, value);
++}
++
++static int cygnus_gpio_get(struct cygnus_gpio *chip, unsigned gpio)
++{
++	return cygnus_get_bit(chip, CYGNUS_GPIO_DATA_IN_OFFSET, gpio);
++}
++
++static int cygnus_gpio_set_pull(struct cygnus_gpio *chip, unsigned gpio,
++				int disable, int pull_up)
++{
++	if (disable) {
++		cygnus_set_bit(chip, CYGNUS_GPIO_RES_EN_OFFSET, gpio, 0);
++	} else {
++		cygnus_set_bit(chip, CYGNUS_GPIO_PAD_RES_OFFSET, gpio, pull_up);
++		cygnus_set_bit(chip, CYGNUS_GPIO_RES_EN_OFFSET, gpio, 1);
++	}
++
++	dev_dbg(chip, "gpio:%u set pullup:%d\n", gpio, pull_up);
++
++	return 0;
++}
++
++#define CYGNUS_GPIO_TEST_AON_GPIO0	170
++#define CYGNUS_GPIO_TEST_SPI2_MISO	69
++#define CYGNUS_GPIO_TEST_DELAY_S	3
++
++static void cygnus_gpio_test(void)
++{
++	gpio_t gpio_in;
++	gpio_t gpio_out;
++	unsigned val;
++
++	printk(BIOS_INFO, "Start gpio test...\n");
++
++	gpio_in = CYGNUS_GPIO_TEST_AON_GPIO0;  /* AON_GPIO0 */
++	gpio_input(gpio_in);
++	gpio_input_pulldown(gpio_in);
++	printk(BIOS_INFO, "GPIO get %d=%d\n", gpio_in, gpio_get(gpio_in));
++
++	gpio_in = CYGNUS_GPIO_TEST_SPI2_MISO;  /* SPI2_MISO */
++	gpio_input(gpio_in);
++	gpio_input_pullup(gpio_in);
++	printk(BIOS_INFO, "GPIO get %d=%d\n", gpio_in, gpio_get(gpio_in));
++	val = 0;
++	gpio_out = CYGNUS_GPIO_TEST_SPI2_MISO;
++
++	gpio_output(gpio_out, val);
++	printk(BIOS_INFO, "GPIO set %d=%d\n", gpio_out, val);
++	delay(CYGNUS_GPIO_TEST_DELAY_S);
++
++	val = 1;
++	gpio_set(gpio_out, val);
++	printk(BIOS_INFO, "GPIO set %d=%d\n", gpio_out, val);
++	delay(CYGNUS_GPIO_TEST_DELAY_S);
++
++	val = 0;
++	gpio_set(gpio_out, val);
++	printk(BIOS_INFO, "GPIO set %d=%d\n", gpio_out, val);
++	delay(CYGNUS_GPIO_TEST_DELAY_S);
++
++	val = 1;
++	gpio_set(gpio_out, val);
++	printk(BIOS_INFO, "GPIO set %d=%d\n", gpio_out, val);
++	delay(CYGNUS_GPIO_TEST_DELAY_S);
++
++	val = 0;
++	gpio_set(gpio_out, val);
++	printk(BIOS_INFO, "GPIO set %d=%d\n", gpio_out, val);
++	delay(CYGNUS_GPIO_TEST_DELAY_S);
++
++	gpio_free(CYGNUS_GPIO_TEST_AON_GPIO0);
++	gpio_free(CYGNUS_GPIO_TEST_SPI2_MISO);
++	printk(BIOS_INFO, "Gpio test completed...\n");
++}
++
++void gpio_init(void)
++{
++	int i;
++
++	printk(BIOS_INFO, "Setting up the gpio...\n");
++
++	for (i = 0; i < ARRAY_SIZE(cygnus_gpio_table); i++) {
++		struct cygnus_gpio *chip = cygnus_gpio_table + i;
++
++		chip->num_banks = (chip->ngpio+NGPIOS_PER_BANK - 1)
++			/ NGPIOS_PER_BANK;
++		if (chip->pinmux_is_supported)
++			chip->pctl_priv = cygnus_pinmux_init();
++	}
++
++	if (IS_ENABLED(CONFIG_CYGNUS_GPIO_TEST))
++		cygnus_gpio_test();
++}
++
++void gpio_free(gpio_t gpio)
++{
++	struct cygnus_gpio *chip;
++	unsigned gpio_num;
++
++	chip = cygnus_get_gpio_core(gpio, &gpio_num);
++	if (chip == NULL) {
++		dev_dbg(chip, "unable to find chip for gpio %d", gpio);
++		return;
++	}
++
++	cygnus_gpio_free(chip, gpio_num);
++}
++
++void gpio_input(gpio_t gpio)
++{
++	struct cygnus_gpio *chip;
++	unsigned gpio_num;
++
++	chip = cygnus_get_gpio_core(gpio, &gpio_num);
++	if (chip == NULL) {
++		dev_dbg(chip, "unable to find chip for gpio %d", gpio);
++		return;
++	}
++
++	if (cygnus_gpio_request(chip, gpio_num) != 0) {
++		printk(BIOS_ERR, "Cannot mux GPIO %d\n", gpio);
++		return;
++	}
++	cygnus_gpio_direction_input(chip, gpio_num);
++}
++
++void gpio_input_pulldown(gpio_t gpio)
++{
++	struct cygnus_gpio *chip;
++	unsigned gpio_num;
++
++	chip = cygnus_get_gpio_core(gpio, &gpio_num);
++	if (chip == NULL) {
++		dev_dbg(chip, "unable to find chip for gpio %d", gpio);
++		return;
++	}
++
++	cygnus_gpio_set_pull(chip, gpio_num, 0, 0);
++}
++
++void gpio_input_pullup(gpio_t gpio)
++{
++	struct cygnus_gpio *chip;
++	unsigned gpio_num;
++
++	chip = cygnus_get_gpio_core(gpio, &gpio_num);
++	if (chip == NULL) {
++		dev_dbg(chip, "unable to find chip for gpio %d", gpio);
++		return;
++	}
++
++	cygnus_gpio_set_pull(chip, gpio_num, 0, 1);
++}
++
++int gpio_get(gpio_t gpio)
++{
++	struct cygnus_gpio *chip;
++	unsigned gpio_num;
++
++	chip = cygnus_get_gpio_core(gpio, &gpio_num);
++	if (chip == NULL) {
++		dev_dbg(chip, "unable to find chip for gpio %d", gpio);
++		return -1;
++	}
++
++	return cygnus_gpio_get(chip, gpio_num);
++}
++
++void gpio_set(gpio_t gpio, int value)
++{
++	struct cygnus_gpio *chip;
++	unsigned gpio_num;
++
++	chip = cygnus_get_gpio_core(gpio, &gpio_num);
++	if (chip == NULL) {
++		dev_dbg(chip, "unable to find chip for gpio %d", gpio);
++		return;
++	}
++
++	cygnus_gpio_set(chip, gpio_num, value);
++}
++
++void gpio_output(gpio_t gpio, int value)
++{
++	struct cygnus_gpio *chip;
++	unsigned gpio_num;
++
++	chip = cygnus_get_gpio_core(gpio, &gpio_num);
++	if (chip == NULL) {
++		dev_dbg(chip, "unable to find chip for gpio %d", gpio);
++		return;
++	}
++
++	if (cygnus_gpio_request(chip, gpio_num) != 0) {
++		printk(BIOS_ERR, "Cannot mux GPIO %d\n", gpio);
++		return;
++	}
++	cygnus_gpio_direction_output(chip, gpio_num, value);
++}
+diff --git a/src/soc/broadcom/cygnus/include/soc/addressmap.h b/src/soc/broadcom/cygnus/include/soc/addressmap.h
+index a9af3d805f..22ef4c430c 100644
+--- a/src/soc/broadcom/cygnus/include/soc/addressmap.h
++++ b/src/soc/broadcom/cygnus/include/soc/addressmap.h
+@@ -1,28 +1,30 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright 2015 Google Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #ifndef __SOC_BROADCOM_CYGNUS_ADDRESSMAP_H__
+ #define __SOC_BROADCOM_CYGNUS_ADDRESSMAP_H__
+ 
+ #define IPROC_PERIPH_BASE		0x19020000
+ #define IPROC_PERIPH_GLB_TIM_REG_BASE	(IPROC_PERIPH_BASE + 0x200)
+ 
+ #define IPROC_QSPI_BASE			0x18047000
+ 
++#define IPROC_IOMUX_OVERRIDE_BASE	0x0301D24C
++
+ #endif	/* __SOC_BROADCOM_CYGNUS_ADDRESSMAP_H__ */
+diff --git a/src/soc/broadcom/cygnus/include/soc/gpio.h b/src/soc/broadcom/cygnus/include/soc/gpio.h
+index 2d9d8f4911..69f06ce0fb 100644
+--- a/src/soc/broadcom/cygnus/include/soc/gpio.h
++++ b/src/soc/broadcom/cygnus/include/soc/gpio.h
+@@ -1,8 +1,37 @@
++/*
++* Copyright (C) 2015 Broadcom Corporation
++*
++* This program is free software; you can redistribute it and/or
++* modify it under the terms of the GNU General Public License as
++* published by the Free Software Foundation version 2.
++*
++* This program is distributed "as is" WITHOUT ANY WARRANTY of any
++* kind, whether express or implied; without even the implied warranty
++* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++* GNU General Public License for more details.
++*/
++
+ #ifndef __SOC_BROADCOM_CYGNUS_GPIO_H__
+ #define __SOC_BROADCOM_CYGNUS_GPIO_H__
+ 
+ #include <types.h>
+ 
++#define ENOTSUPP	524	/* Operation is not supported */
++
++/* Supported GPIO types. Not all of these types are supported on all boards. */
++enum iproc_gpio_types {
++	IPROC_GPIO_CCA_ID,
++	IPROC_GPIO_CMICM_ID,
++	IPROC_GPIO_ASIU_ID
++};
++
+ typedef u32 gpio_t;
+ 
++
++void *cygnus_pinmux_init(void);
++int cygnus_gpio_request_enable(void *priv, unsigned pin);
++void cygnus_gpio_disable_free(void *priv, unsigned pin);
++void gpio_init(void);
++void gpio_free(gpio_t gpio);
++
+ #endif	/* __SOC_BROADCOM_CYGNUS_GPIO_H__ */
+diff --git a/src/soc/broadcom/cygnus/iomux.c b/src/soc/broadcom/cygnus/iomux.c
+new file mode 100644
+index 0000000000..f684def59e
+--- /dev/null
++++ b/src/soc/broadcom/cygnus/iomux.c
+@@ -0,0 +1,302 @@
++/*
++* Copyright (C) 2015 Broadcom Corporation
++*
++* This program is free software; you can redistribute it and/or
++* modify it under the terms of the GNU General Public License as
++* published by the Free Software Foundation version 2.
++*
++* This program is distributed "as is" WITHOUT ANY WARRANTY of any
++* kind, whether express or implied; without even the implied warranty
++* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++* GNU General Public License for more details.
++*/
++
++#include <arch/io.h>
++#include <console/console.h>
++#include <gpio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <soc/addressmap.h>
++
++#define CYGNUS_NUM_IOMUX_REGS     8
++#define CYGNUS_NUM_MUX_PER_REG    8
++#define CYGNUS_NUM_IOMUX          (CYGNUS_NUM_IOMUX_REGS * \
++				   CYGNUS_NUM_MUX_PER_REG)
++
++/*
++ * Cygnus IOMUX pinctrl core
++ *
++ * @base1: second I/O register base
++ */
++struct cygnus_pinctrl {
++	void *base1;
++};
++
++static struct cygnus_pinctrl pinctrl_data = {
++	.base1 = (void *)IPROC_IOMUX_OVERRIDE_BASE
++};
++
++/*
++ * Certain pins can be individually muxed to GPIO function
++ *
++ * @is_supported: flag to indicate GPIO mux is supported for this pin
++ * @offset: register offset for GPIO mux override of a pin
++ * @shift: bit shift for GPIO mux override of a pin
++ */
++struct cygnus_gpio_mux {
++	int is_supported;
++	unsigned int offset;
++	unsigned int shift;
++};
++
++/*
++ * Description of a pin in Cygnus
++ *
++ * @pin: pin number
++ * @name: pin name
++ * @gpio_mux: GPIO override related information
++ */
++struct cygnus_pin {
++	unsigned pin;
++	const char *name;
++	struct cygnus_gpio_mux gpio_mux;
++};
++
++#define CYGNUS_PIN_DESC(p, n, i, o, s)	\
++{					\
++	.pin = p,			\
++	.name = n,			\
++	.gpio_mux = {			\
++		.is_supported = i,	\
++		.offset = o,		\
++		.shift = s,		\
++	},				\
++}
++
++/*
++ * List of pins in Cygnus
++ */
++static struct cygnus_pin cygnus_pins[] = {
++	CYGNUS_PIN_DESC(0, "ext_device_reset_n", 0, 0, 0),
++	CYGNUS_PIN_DESC(1, "chip_mode0", 0, 0, 0),
++	CYGNUS_PIN_DESC(2, "chip_mode1", 0, 0, 0),
++	CYGNUS_PIN_DESC(3, "chip_mode2", 0, 0, 0),
++	CYGNUS_PIN_DESC(4, "chip_mode3", 0, 0, 0),
++	CYGNUS_PIN_DESC(5, "chip_mode4", 0, 0, 0),
++	CYGNUS_PIN_DESC(6, "bsc0_scl", 0, 0, 0),
++	CYGNUS_PIN_DESC(7, "bsc0_sda", 0, 0, 0),
++	CYGNUS_PIN_DESC(8, "bsc1_scl", 0, 0, 0),
++	CYGNUS_PIN_DESC(9, "bsc1_sda", 0, 0, 0),
++	CYGNUS_PIN_DESC(10, "d1w_dq", 1, 0x28, 0),
++	CYGNUS_PIN_DESC(11, "d1wowstz_l", 1, 0x4, 28),
++	CYGNUS_PIN_DESC(12, "gpio0", 0, 0, 0),
++	CYGNUS_PIN_DESC(13, "gpio1", 0, 0, 0),
++	CYGNUS_PIN_DESC(14, "gpio2", 0, 0, 0),
++	CYGNUS_PIN_DESC(15, "gpio3", 0, 0, 0),
++	CYGNUS_PIN_DESC(16, "gpio4", 0, 0, 0),
++	CYGNUS_PIN_DESC(17, "gpio5", 0, 0, 0),
++	CYGNUS_PIN_DESC(18, "gpio6", 0, 0, 0),
++	CYGNUS_PIN_DESC(19, "gpio7", 0, 0, 0),
++	CYGNUS_PIN_DESC(20, "gpio8", 0, 0, 0),
++	CYGNUS_PIN_DESC(21, "gpio9", 0, 0, 0),
++	CYGNUS_PIN_DESC(22, "gpio10", 0, 0, 0),
++	CYGNUS_PIN_DESC(23, "gpio11", 0, 0, 0),
++	CYGNUS_PIN_DESC(24, "gpio12", 0, 0, 0),
++	CYGNUS_PIN_DESC(25, "gpio13", 0, 0, 0),
++	CYGNUS_PIN_DESC(26, "gpio14", 0, 0, 0),
++	CYGNUS_PIN_DESC(27, "gpio15", 0, 0, 0),
++	CYGNUS_PIN_DESC(28, "gpio16", 0, 0, 0),
++	CYGNUS_PIN_DESC(29, "gpio17", 0, 0, 0),
++	CYGNUS_PIN_DESC(30, "gpio18", 0, 0, 0),
++	CYGNUS_PIN_DESC(31, "gpio19", 0, 0, 0),
++	CYGNUS_PIN_DESC(32, "gpio20", 0, 0, 0),
++	CYGNUS_PIN_DESC(33, "gpio21", 0, 0, 0),
++	CYGNUS_PIN_DESC(34, "gpio22", 0, 0, 0),
++	CYGNUS_PIN_DESC(35, "gpio23", 0, 0, 0),
++	CYGNUS_PIN_DESC(36, "mdc", 0, 0, 0),
++	CYGNUS_PIN_DESC(37, "mdio", 0, 0, 0),
++	CYGNUS_PIN_DESC(38, "pwm0", 1, 0x10, 30),
++	CYGNUS_PIN_DESC(39, "pwm1", 1, 0x10, 28),
++	CYGNUS_PIN_DESC(40, "pwm2", 1, 0x10, 26),
++	CYGNUS_PIN_DESC(41, "pwm3", 1, 0x10, 24),
++	CYGNUS_PIN_DESC(42, "sc0_clk", 1, 0x10, 22),
++	CYGNUS_PIN_DESC(43, "sc0_cmdvcc_l", 1, 0x10, 20),
++	CYGNUS_PIN_DESC(44, "sc0_detect", 1, 0x10, 18),
++	CYGNUS_PIN_DESC(45, "sc0_fcb", 1, 0x10, 16),
++	CYGNUS_PIN_DESC(46, "sc0_io", 1, 0x10, 14),
++	CYGNUS_PIN_DESC(47, "sc0_rst_l", 1, 0x10, 12),
++	CYGNUS_PIN_DESC(48, "sc1_clk", 1, 0x10, 10),
++	CYGNUS_PIN_DESC(49, "sc1_cmdvcc_l", 1, 0x10, 8),
++	CYGNUS_PIN_DESC(50, "sc1_detect", 1, 0x10, 6),
++	CYGNUS_PIN_DESC(51, "sc1_fcb", 1, 0x10, 4),
++	CYGNUS_PIN_DESC(52, "sc1_io", 1, 0x10, 2),
++	CYGNUS_PIN_DESC(53, "sc1_rst_l", 1, 0x10, 0),
++	CYGNUS_PIN_DESC(54, "spi0_clk", 1, 0x18, 10),
++	CYGNUS_PIN_DESC(55, "spi0_mosi", 1, 0x18, 6),
++	CYGNUS_PIN_DESC(56, "spi0_miso", 1, 0x18, 8),
++	CYGNUS_PIN_DESC(57, "spi0_ss", 1, 0x18, 4),
++	CYGNUS_PIN_DESC(58, "spi1_clk", 1, 0x18, 2),
++	CYGNUS_PIN_DESC(59, "spi1_mosi", 1, 0x1c, 30),
++	CYGNUS_PIN_DESC(60, "spi1_miso", 1, 0x18, 0),
++	CYGNUS_PIN_DESC(61, "spi1_ss", 1, 0x1c, 28),
++	CYGNUS_PIN_DESC(62, "spi2_clk", 1, 0x1c, 26),
++	CYGNUS_PIN_DESC(63, "spi2_mosi", 1, 0x1c, 22),
++	CYGNUS_PIN_DESC(64, "spi2_miso", 1, 0x1c, 24),
++	CYGNUS_PIN_DESC(65, "spi2_ss", 1, 0x1c, 20),
++	CYGNUS_PIN_DESC(66, "spi3_clk", 1, 0x1c, 18),
++	CYGNUS_PIN_DESC(67, "spi3_mosi", 1, 0x1c, 14),
++	CYGNUS_PIN_DESC(68, "spi3_miso", 1, 0x1c, 16),
++	CYGNUS_PIN_DESC(69, "spi3_ss", 1, 0x1c, 12),
++	CYGNUS_PIN_DESC(70, "uart0_cts", 1, 0x1c, 10),
++	CYGNUS_PIN_DESC(71, "uart0_rts", 1, 0x1c, 8),
++	CYGNUS_PIN_DESC(72, "uart0_rx", 1, 0x1c, 6),
++	CYGNUS_PIN_DESC(73, "uart0_tx", 1, 0x1c, 4),
++	CYGNUS_PIN_DESC(74, "uart1_cts", 1, 0x1c, 2),
++	CYGNUS_PIN_DESC(75, "uart1_dcd", 1, 0x1c, 0),
++	CYGNUS_PIN_DESC(76, "uart1_dsr", 1, 0x20, 14),
++	CYGNUS_PIN_DESC(77, "uart1_dtr", 1, 0x20, 12),
++	CYGNUS_PIN_DESC(78, "uart1_ri", 1, 0x20, 10),
++	CYGNUS_PIN_DESC(79, "uart1_rts", 1, 0x20, 8),
++	CYGNUS_PIN_DESC(80, "uart1_rx", 1, 0x20, 6),
++	CYGNUS_PIN_DESC(81, "uart1_tx", 1, 0x20, 4),
++	CYGNUS_PIN_DESC(82, "uart3_rx", 1, 0x20, 2),
++	CYGNUS_PIN_DESC(83, "uart3_tx", 1, 0x20, 0),
++	CYGNUS_PIN_DESC(84, "sdio1_clk_sdcard", 1, 0x14, 6),
++	CYGNUS_PIN_DESC(85, "sdio1_cmd", 1, 0x14, 4),
++	CYGNUS_PIN_DESC(86, "sdio1_data0", 1, 0x14, 2),
++	CYGNUS_PIN_DESC(87, "sdio1_data1", 1, 0x14, 0),
++	CYGNUS_PIN_DESC(88, "sdio1_data2", 1, 0x18, 30),
++	CYGNUS_PIN_DESC(89, "sdio1_data3", 1, 0x18, 28),
++	CYGNUS_PIN_DESC(90, "sdio1_wp_n", 1, 0x18, 24),
++	CYGNUS_PIN_DESC(91, "sdio1_card_rst", 1, 0x14, 10),
++	CYGNUS_PIN_DESC(92, "sdio1_led_on", 1, 0x18, 26),
++	CYGNUS_PIN_DESC(93, "sdio1_cd", 1, 0x14, 8),
++	CYGNUS_PIN_DESC(94, "sdio0_clk_sdcard", 1, 0x14, 26),
++	CYGNUS_PIN_DESC(95, "sdio0_cmd", 1, 0x14, 24),
++	CYGNUS_PIN_DESC(96, "sdio0_data0", 1, 0x14, 22),
++	CYGNUS_PIN_DESC(97, "sdio0_data1", 1, 0x14, 20),
++	CYGNUS_PIN_DESC(98, "sdio0_data2", 1, 0x14, 18),
++	CYGNUS_PIN_DESC(99, "sdio0_data3", 1, 0x14, 16),
++	CYGNUS_PIN_DESC(100, "sdio0_wp_n", 1, 0x14, 12),
++	CYGNUS_PIN_DESC(101, "sdio0_card_rst", 1, 0x14, 30),
++	CYGNUS_PIN_DESC(102, "sdio0_led_on", 1, 0x14, 14),
++	CYGNUS_PIN_DESC(103, "sdio0_cd", 1, 0x14, 28),
++	CYGNUS_PIN_DESC(104, "sflash_clk", 1, 0x18, 22),
++	CYGNUS_PIN_DESC(105, "sflash_cs_l", 1, 0x18, 20),
++	CYGNUS_PIN_DESC(106, "sflash_mosi", 1, 0x18, 14),
++	CYGNUS_PIN_DESC(107, "sflash_miso", 1, 0x18, 16),
++	CYGNUS_PIN_DESC(108, "sflash_wp_n", 1, 0x18, 12),
++	CYGNUS_PIN_DESC(109, "sflash_hold_n", 1, 0x18, 18),
++	CYGNUS_PIN_DESC(110, "nand_ale", 1, 0xc, 30),
++	CYGNUS_PIN_DESC(111, "nand_ce0_l", 1, 0xc, 28),
++	CYGNUS_PIN_DESC(112, "nand_ce1_l", 1, 0xc, 26),
++	CYGNUS_PIN_DESC(113, "nand_cle", 1, 0xc, 24),
++	CYGNUS_PIN_DESC(114, "nand_dq0", 1, 0xc, 22),
++	CYGNUS_PIN_DESC(115, "nand_dq1", 1, 0xc, 20),
++	CYGNUS_PIN_DESC(116, "nand_dq2", 1, 0xc, 18),
++	CYGNUS_PIN_DESC(117, "nand_dq3", 1, 0xc, 16),
++	CYGNUS_PIN_DESC(118, "nand_dq4", 1, 0xc, 14),
++	CYGNUS_PIN_DESC(119, "nand_dq5", 1, 0xc, 12),
++	CYGNUS_PIN_DESC(120, "nand_dq6", 1, 0xc, 10),
++	CYGNUS_PIN_DESC(121, "nand_dq7", 1, 0xc, 8),
++	CYGNUS_PIN_DESC(122, "nand_rb_l", 1, 0xc, 6),
++	CYGNUS_PIN_DESC(123, "nand_re_l", 1, 0xc, 4),
++	CYGNUS_PIN_DESC(124, "nand_we_l", 1, 0xc, 2),
++	CYGNUS_PIN_DESC(125, "nand_wp_l", 1, 0xc, 0),
++	CYGNUS_PIN_DESC(126, "lcd_clac", 1, 0x4, 26),
++	CYGNUS_PIN_DESC(127, "lcd_clcp", 1, 0x4, 24),
++	CYGNUS_PIN_DESC(128, "lcd_cld0", 1, 0x4, 22),
++	CYGNUS_PIN_DESC(129, "lcd_cld1", 1, 0x4, 0),
++	CYGNUS_PIN_DESC(130, "lcd_cld10", 1, 0x4, 20),
++	CYGNUS_PIN_DESC(131, "lcd_cld11", 1, 0x4, 18),
++	CYGNUS_PIN_DESC(132, "lcd_cld12", 1, 0x4, 16),
++	CYGNUS_PIN_DESC(133, "lcd_cld13", 1, 0x4, 14),
++	CYGNUS_PIN_DESC(134, "lcd_cld14", 1, 0x4, 12),
++	CYGNUS_PIN_DESC(135, "lcd_cld15", 1, 0x4, 10),
++	CYGNUS_PIN_DESC(136, "lcd_cld16", 1, 0x4, 8),
++	CYGNUS_PIN_DESC(137, "lcd_cld17", 1, 0x4, 6),
++	CYGNUS_PIN_DESC(138, "lcd_cld18", 1, 0x4, 4),
++	CYGNUS_PIN_DESC(139, "lcd_cld19", 1, 0x4, 2),
++	CYGNUS_PIN_DESC(140, "lcd_cld2", 1, 0x8, 22),
++	CYGNUS_PIN_DESC(141, "lcd_cld20", 1, 0x8, 30),
++	CYGNUS_PIN_DESC(142, "lcd_cld21", 1, 0x8, 28),
++	CYGNUS_PIN_DESC(143, "lcd_cld22", 1, 0x8, 26),
++	CYGNUS_PIN_DESC(144, "lcd_cld23", 1, 0x8, 24),
++	CYGNUS_PIN_DESC(145, "lcd_cld3", 1, 0x8, 20),
++	CYGNUS_PIN_DESC(146, "lcd_cld4", 1, 0x8, 18),
++	CYGNUS_PIN_DESC(147, "lcd_cld5", 1, 0x8, 16),
++	CYGNUS_PIN_DESC(148, "lcd_cld6", 1, 0x8, 14),
++	CYGNUS_PIN_DESC(149, "lcd_cld7", 1, 0x8, 12),
++	CYGNUS_PIN_DESC(150, "lcd_cld8", 1, 0x8, 10),
++	CYGNUS_PIN_DESC(151, "lcd_cld9", 1, 0x8, 8),
++	CYGNUS_PIN_DESC(152, "lcd_clfp", 1, 0x8, 6),
++	CYGNUS_PIN_DESC(153, "lcd_clle", 1, 0x8, 4),
++	CYGNUS_PIN_DESC(154, "lcd_cllp", 1, 0x8, 2),
++	CYGNUS_PIN_DESC(155, "lcd_clpower", 1, 0x8, 0),
++	CYGNUS_PIN_DESC(156, "camera_vsync", 1, 0x4, 30),
++	CYGNUS_PIN_DESC(157, "camera_trigger", 1, 0x0, 0),
++	CYGNUS_PIN_DESC(158, "camera_strobe", 1, 0x0, 2),
++	CYGNUS_PIN_DESC(159, "camera_standby", 1, 0x0, 4),
++	CYGNUS_PIN_DESC(160, "camera_reset_n", 1, 0x0, 6),
++	CYGNUS_PIN_DESC(161, "camera_pixdata9", 1, 0x0, 8),
++	CYGNUS_PIN_DESC(162, "camera_pixdata8", 1, 0x0, 10),
++	CYGNUS_PIN_DESC(163, "camera_pixdata7", 1, 0x0, 12),
++	CYGNUS_PIN_DESC(164, "camera_pixdata6", 1, 0x0, 14),
++	CYGNUS_PIN_DESC(165, "camera_pixdata5", 1, 0x0, 16),
++	CYGNUS_PIN_DESC(166, "camera_pixdata4", 1, 0x0, 18),
++	CYGNUS_PIN_DESC(167, "camera_pixdata3", 1, 0x0, 20),
++	CYGNUS_PIN_DESC(168, "camera_pixdata2", 1, 0x0, 22),
++	CYGNUS_PIN_DESC(169, "camera_pixdata1", 1, 0x0, 24),
++	CYGNUS_PIN_DESC(170, "camera_pixdata0", 1, 0x0, 26),
++	CYGNUS_PIN_DESC(171, "camera_pixclk", 1, 0x0, 28),
++	CYGNUS_PIN_DESC(172, "camera_hsync", 1, 0x0, 30),
++	CYGNUS_PIN_DESC(173, "camera_pll_ref_clk", 0, 0, 0),
++	CYGNUS_PIN_DESC(174, "usb_id_indication", 0, 0, 0),
++	CYGNUS_PIN_DESC(175, "usb_vbus_indication", 0, 0, 0),
++	CYGNUS_PIN_DESC(176, "gpio0_3p3", 0, 0, 0),
++	CYGNUS_PIN_DESC(177, "gpio1_3p3", 0, 0, 0),
++	CYGNUS_PIN_DESC(178, "gpio2_3p3", 0, 0, 0),
++	CYGNUS_PIN_DESC(179, "gpio3_3p3", 0, 0, 0),
++};
++
++int cygnus_gpio_request_enable(void *priv, unsigned pin)
++{
++	struct cygnus_pinctrl *pinctrl = (struct cygnus_pinctrl *)priv;
++	struct cygnus_gpio_mux *mux = &cygnus_pins[pin].gpio_mux;
++	u32 val;
++
++	/* not all pins support GPIO pinmux override */
++	if (!mux->is_supported)
++		return -ENOTSUPP;
++
++	val = read32(pinctrl->base1 + mux->offset);
++	val |= 0x3 << mux->shift;
++	write32(pinctrl->base1 + mux->offset, val);
++
++	printk(BIOS_INFO, "gpio request enable pin=%u offset=0x%x shift=%u\n",
++		pin, mux->offset, mux->shift);
++
++	return 0;
++}
++
++void cygnus_gpio_disable_free(void *priv, unsigned pin)
++{
++	struct cygnus_pinctrl *pinctrl = (struct cygnus_pinctrl *)priv;
++	struct cygnus_gpio_mux *mux = &cygnus_pins[pin].gpio_mux;
++	u32 val;
++
++	if (!mux->is_supported)
++		return;
++
++	val = read32(pinctrl->base1 + mux->offset);
++	val &= ~(0x3 << mux->shift);
++	write32(pinctrl->base1 + mux->offset, val);
++
++	printk(BIOS_INFO, "gpio disable free pin=%u offset=0x%x shift=%u\n",
++		pin, mux->offset, mux->shift);
++}
++
++void *cygnus_pinmux_init()
++{
++	return &pinctrl_data;
++}
+diff --git a/src/soc/broadcom/cygnus/romstage.c b/src/soc/broadcom/cygnus/romstage.c
+index 13a0d4f0d6..6f169b35e9 100644
+--- a/src/soc/broadcom/cygnus/romstage.c
++++ b/src/soc/broadcom/cygnus/romstage.c
+@@ -1,55 +1,57 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright 2015 Google Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <arch/cache.h>
+ #include <arch/exception.h>
+ #include <arch/stages.h>
+ #include <armv7.h>
+ #include <cbfs.h>
+ #include <cbmem.h>
+ #include <console/console.h>
+ #include <delay.h>
+ #include <program_loading.h>
++#include <soc/gpio.h>
+ #include <soc/sdram.h>
+ #include <stdlib.h>
+ #include <symbols.h>
+ #include <timestamp.h>
+ #include <types.h>
+ #include <vendorcode/google/chromeos/chromeos.h>
+ 
+ void main(void)
+ {
+ 	timestamp_add_now(TS_START_ROMSTAGE);
+ 
+ 	console_init();
+ 
+ 	timestamp_add_now(TS_BEFORE_INITRAM);
+ 	sdram_init();
+ 	timestamp_add_now(TS_AFTER_INITRAM);
+ 
+ 	/* Now that DRAM is up, add mappings for it and DMA coherency buffer. */
+ 	mmu_config_range((uintptr_t)_dram/MiB,
+ 			 sdram_size_mb(), DCACHE_WRITEBACK);
+ 	mmu_config_range((uintptr_t)_dma_coherent/MiB,
+ 			 _dma_coherent_size/MiB, DCACHE_OFF);
++	gpio_init();
+ 
+ 	cbmem_initialize_empty();
+ 
+ 	run_ramstage();
+ }

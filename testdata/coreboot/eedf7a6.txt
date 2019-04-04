@@ -1,0 +1,1430 @@
+commit eedf7a6.txt
+Author: Zheng Bao <zheng.bao@amd.com>
+Date:   Fri Apr 23 17:35:37 2010 +0000
+
+    AMD Socket ASB2 and AM3 support.
+    
+    Signed-off-by: Zheng Bao <zheng.bao@amd.com>
+    Acked-by: Stefan Reinauer <stepan@coresystems.de>
+    
+    
+    
+    git-svn-id: svn://svn.coreboot.org/coreboot/trunk@5482 2b7e53f0-3cfb-0310-b3e9-8179ed1497e1
+
+diff --git a/src/cpu/amd/Kconfig b/src/cpu/amd/Kconfig
+index 7285bb7e06..b60e729bc5 100644
+--- a/src/cpu/amd/Kconfig
++++ b/src/cpu/amd/Kconfig
+@@ -1,20 +1,22 @@
+ config K8_REV_F_SUPPORT
+ 	bool
+ 	default n
+ 
+ source src/cpu/amd/socket_754/Kconfig
+ source src/cpu/amd/socket_939/Kconfig
+ source src/cpu/amd/socket_940/Kconfig
+ source src/cpu/amd/socket_AM2/Kconfig
+ source src/cpu/amd/socket_AM2r2/Kconfig
++source src/cpu/amd/socket_AM3/Kconfig
++source src/cpu/amd/socket_ASB2/Kconfig
+ source src/cpu/amd/socket_F/Kconfig
+ source src/cpu/amd/socket_F_1207/Kconfig
+ source src/cpu/amd/socket_S1G1/Kconfig
+ 
+ source src/cpu/amd/model_fxx/Kconfig
+ source src/cpu/amd/model_10xxx/Kconfig
+ source src/cpu/amd/model_gx1/Kconfig
+ source src/cpu/amd/model_gx2/Kconfig
+ source src/cpu/amd/model_lx/Kconfig
+ 
+ source src/cpu/amd/sc520/Kconfig
+diff --git a/src/cpu/amd/Makefile.inc b/src/cpu/amd/Makefile.inc
+index 3944270d51..8b5c6d16b6 100644
+--- a/src/cpu/amd/Makefile.inc
++++ b/src/cpu/amd/Makefile.inc
+@@ -1,12 +1,14 @@
+ subdirs-$(CONFIG_CPU_AMD_SOCKET_F) += socket_F
+ subdirs-$(CONFIG_CPU_AMD_SOCKET_F_1207) += socket_F_1207
+ subdirs-$(CONFIG_CPU_AMD_SOCKET_754) += socket_754
+ subdirs-$(CONFIG_CPU_AMD_SOCKET_939) += socket_939
+ subdirs-$(CONFIG_CPU_AMD_SOCKET_940) += socket_940
+ subdirs-$(CONFIG_CPU_AMD_SOCKET_AM2) += socket_AM2
+ subdirs-$(CONFIG_CPU_AMD_SOCKET_AM2R2) += socket_AM2r2
++subdirs-$(CONFIG_CPU_AMD_SOCKET_AM3) += socket_AM3
++subdirs-$(CONFIG_CPU_AMD_SOCKET_ASB2) += socket_ASB2
+ subdirs-$(CONFIG_CPU_AMD_GX1) += model_gx1
+ subdirs-$(CONFIG_CPU_AMD_GX2) += model_gx2
+ subdirs-$(CONFIG_CPU_AMD_LX) += model_lx
+ subdirs-$(CONFIG_CPU_AMD_SC520) += sc520
+ subdirs-$(CONFIG_CPU_AMD_SOCKET_S1G1) += socket_S1G1
+diff --git a/src/cpu/amd/model_10xxx/defaults.h b/src/cpu/amd/model_10xxx/defaults.h
+index b1b245a2d8..98918ec312 100644
+--- a/src/cpu/amd/model_10xxx/defaults.h
++++ b/src/cpu/amd/model_10xxx/defaults.h
+@@ -1,454 +1,454 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2008 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+  */
+ 
+ 
+ /*
+  * Default MSR and errata settings.
+  */
+ static const struct {
+ 	u32 msr;
+ 	u32 revision;
+ 	u32 platform;
+ 	u32 data_lo;
+ 	u32 data_hi;
+ 	u32 mask_lo;
+ 	u32 mask_hi;
+ } fam10_msr_default[] = {
+ 	{ TOP_MEM2, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000000,
+ 	  0xFFFFFFFF, 0xFFFFFFFF },
+ 
+ 	{ SYSCFG, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  3 << 21, 0x00000000,
+ 	  3 << 21, 0x00000000 },	/* [MtrrTom2En]=1,[TOM2EnWB] = 1*/
+ 
+ 	{ HWCR, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  1 << 4, 0x00000000,
+ 	  1 << 4, 0x00000000 },		/* [INVD_WBINVD]=1 */
+ 
+ 	{ MC4_CTL_MASK, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0xF << 19, 0x00000000,
+ 	  0xF << 19, 0x00000000 },	/* [RtryHt[0..3]]=1 */
+ 
+ 	{ DC_CFG, AMD_FAM10_ALL, AMD_PTYPE_SVR,
+ 	  0x00000000, 0x00000004,
+ 	  0x00000000, 0x0000000C },	/* [REQ_CTR] = 1 for Server */
+ 
+ 	{ DC_CFG, AMD_DR_Bx, AMD_PTYPE_SVR,
+ 	  0x00000000, 0x00000000,
+ 	  0x00000000, 0x00000C00 },	/* Errata 326 */
+ 
+ 	{ NB_CFG, AMD_FAM10_ALL, AMD_PTYPE_DC | AMD_PTYPE_MC,
+ 	  0x00000000, 1 << 22,
+ 	  0x00000000, 1 << 22 },	/* [ApicInitIDLo]=1 */
+ 
+ 	{ BU_CFG2, AMD_DR_Bx, AMD_PTYPE_ALL,
+ 	  1 << 29, 0x00000000,
+ 	  1 << 29, 0x00000000 },	/* For Bx Smash1GPages=1 */
+ 
+ 	{ DC_CFG, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  1 << 24, 0x00000000,
+ 	  1 << 24, 0x00000000 },	/* Erratum #261 [DIS_PIGGY_BACK_SCRUB]=1 */
+ 
+ 	{ LS_CFG, AMD_FAM10_GT_B0, AMD_PTYPE_ALL,
+ 	  0 << 1, 0x00000000,
+ 	  1 << 1, 0x00000000 },		/* IDX_MATCH_ALL=0 */
+ 
+ 	{ BU_CFG, AMD_DR_LT_B3, AMD_PTYPE_ALL,
+ 	  1 << 21, 0x00000000,
+ 	  1 << 21, 0x00000000 },	/* Erratum #254 DR B1 BU_CFG[21]=1 */
+ 
+ 	{ BU_CFG, AMD_DR_LT_B3, AMD_PTYPE_ALL,
+ 	  1 << 23, 0x00000000,
+ 	  1 << 23, 0x00000000 },	/* Erratum #309 BU_CFG[23]=1 */
+ 
+ 	/* CPUID_EXT_FEATURES */
+ 	{ CPUIDFEATURES, AMD_FAM10_ALL, AMD_PTYPE_DC | AMD_PTYPE_MC,
+ 	  1 << 28, 0x00000000,
+ 	  1 << 28, 0x00000000 },	/* [HyperThreadFeatEn]=1 */
+ 
+ 	{ CPUIDFEATURES, AMD_FAM10_ALL, AMD_PTYPE_DC,
+ 	  0x00000000, 1 << (33-32),
+ 	  0x00000000, 1 << (33-32) },	/* [ExtendedFeatEn]=1 */
+ };
+ 
+ 
+ /*
+  * Default PCI and errata settings.
+  */
+ static const struct {
+ 	u8  function;
+ 	u16 offset;
+ 	u32 revision;
+ 	u32 platform;
+ 	u32 data;
+ 	u32 mask;
+ } fam10_pci_default[] = {
+ 
+ 	/* Function 0 - HT Config */
+ 
+ 	{ 0, 0x68, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x004E4800, 0x006E6800 },	/* [19:17] for 8bit APIC config,
+ 	  [14:13] BufPriRel = 2h [11] RspPassPW set,
+ 	  [22:21] DsNpReqLmt = 10b */
+ 
+ 	/* Errata 281 Workaround */
+ 	{ 0, 0x68, (AMD_DR_B0 | AMD_DR_B1),
+ 	  AMD_PTYPE_SVR, 0x00200000, 0x00600000 },	/* [22:21] DsNpReqLmt0 = 01b */
+ 
+ 	{ 0, 0x84, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00002000, 0x00002000 },	/* [13] LdtStopTriEn = 1 */
+ 
+ 	{ 0, 0xA4, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00002000, 0x00002000 },	/* [13] LdtStopTriEn = 1 */
+ 
+ 	{ 0, 0xC4, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00002000, 0x00002000 },	/* [13] LdtStopTriEn = 1 */
+ 
+ 	{ 0, 0xE4, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00002000, 0x00002000 },	/* [13] LdtStopTriEn = 1 */
+ 
+ 	/* Link Global Retry Control Register */
+ 	{ 0, 0x150, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00073900, 0x00073F00 },
+ 
+ 	/*  Errata 351
+ 	 * System software should program the Link Extended Control Registers[LS2En]
+ 	 * (F0x[18C:170][8]) to 0b for all links. System software should also
+ 	 * program Link Global Extended Control Register[ForceFullT0]
+ 	 * (F0x16C[15:13]) to 000b */
+ 
+ 	{ 0, 0x170, AMD_FAM10_ALL, AMD_PTYPE_ALL, /* Fix FAM10_ALL when fixed in rev guide */
+ 	  0x00000000, 0x00000100 },
+ 	{ 0, 0x174, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000100 },
+ 	{ 0, 0x178, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000100 },
+ 	{ 0, 0x17C, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000100 },
+ 	{ 0, 0x180, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000100 },
+ 	{ 0, 0x184, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000100 },
+ 	{ 0, 0x188, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000100 },
+ 	{ 0, 0x18C, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000100 },
+ 	{ 0, 0x170, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0x00000100 },
+ 
+ 	/* Link Global Extended Control Register */
+ 	{ 0, 0x16C, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000014, 0x0000003F },	/* [15:13] ForceFullT0 = 0b,
+ 								 * Set T0Time 14h per BKDG */
+ 
+ 
+ 	/* Function 1 - Map Init */
+ 
+ 	/* Before reading F1x114_x2 or F1x114_x3 software must
+ 	 * initialize the registers or NB Array MCA errors may
+ 	 * occur.  BIOS should initialize index 0h of F1x114_x2 and
+ 	 * F1x114_x3 to prevent reads from F1x114 from generating NB
+ 	 * Array MCA errors.  BKDG Doc #3116 Rev 1.07
+ 	 */
+ 
+ 	{ 1, 0x110, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x20000000, 0xFFFFFFFF },	/* Select extended MMIO Base */
+ 
+ 	{ 1, 0x114, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0xFFFFFFFF },	/* Clear map  */
+ 
+ 	{ 1, 0x110, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x30000000, 0xFFFFFFFF },	/* Select extended MMIO Base */
+ 
+ 	{ 1, 0x114, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000000, 0xFFFFFFFF },	/* Clear map  */
+ 
+ 	/* Function 2 - DRAM Controller */
+ 
+ 	/* Function 3 - Misc. Control */
+ 	{ 3, 0x40, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000100, 0x00000100 },	/* [8] MstrAbrtEn */
+ 
+ 	{ 3, 0x44, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x4A30005C, 0x4A30005C },	/* [30] SyncOnDramAdrParErrEn = 1,
+ 					   [27] NbMcaToMstCpuEn = 1,
+ 					   [25] DisPciCfgCpuErrRsp = 1,
+ 					   [21] SyncOnAnyErrEn = 1,
+ 					   [20] SyncOnWDTEn = 1,
+ 					   [6] CpuErrDis = 1,
+ 					   [4] SyncPktPropDis = 1,
+ 					   [3] SyncPktGenDis = 1,
+ 					   [2] SyncOnUcEccEn = 1 */
+ 
+ 	/* XBAR buffer settings */
+ 	{ 3, 0x6C, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00018052, 0x700780F7 },
+ 
+ 	/* Errata 281 Workaround */
+ 	{ 3, 0x6C, ( AMD_DR_B0 | AMD_DR_B1),
+ 	  AMD_PTYPE_SVR, 0x00010094, 0x700780F7 },
+ 
+ 	{ 3, 0x6C, AMD_FAM10_ALL, AMD_PTYPE_UMA,
+ 	  0x60018051, 0x700780F7 },
+ 
+ 	{ 3, 0x70, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00041153, 0x777777F7 },
+ 
+ 	{ 3, 0x70, AMD_FAM10_ALL, AMD_PTYPE_UMA,
+ 	  0x61221151, 0x777777F7 },
+ 
+ 	{ 3, 0x74, AMD_FAM10_ALL, AMD_PTYPE_UMA,
+ 	  0x00080101, 0x000F7777 },
+ 
+ 	{ 3, 0x7C, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00090914, 0x707FFF1F },
+ 
+ 	/* Errata 281 Workaround */
+ 	{ 3, 0x7C, ( AMD_DR_B0 | AMD_DR_B1),
+ 	 AMD_PTYPE_SVR, 0x00144514, 0x707FFF1F },
+ 
+ 	{ 3, 0x7C, AMD_FAM10_ALL, AMD_PTYPE_UMA,
+ 	  0x00070814, 0x007FFF1F },
+ 
+ 	{ 3, 0x140, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00800756, 0x00F3FFFF },
+ 
+ 	{ 3, 0x140, AMD_FAM10_ALL, AMD_PTYPE_UMA,
+ 	  0x00C37756, 0x00F3FFFF },
+ 
+ 	{ 3, 0x144, AMD_FAM10_ALL, AMD_PTYPE_UMA,
+ 	  0x00000036, 0x000000FF },
+ 
+ 	/* Errata 281 Workaround */
+ 	{ 3, 0x144, ( AMD_DR_B0 | AMD_DR_B1),
+ 	 AMD_PTYPE_SVR, 0x00000001, 0x0000000F },
+ 	 	/* [3:0] RspTok = 0001b */
+ 
+ 	{ 3, 0x148, AMD_FAM10_ALL, AMD_PTYPE_UMA,
+ 	  0x8000052A, 0xD5FFFFFF },
+ 
+ 	/* ACPI Power State Control Reg1 */
+ 	{ 3, 0x80, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0xE6002200, 0xFFFFFFFF },
+ 
+ 	/* ACPI Power State Control Reg2 */
+ 	{ 3, 0x84, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0xA0E641E6, 0xFFFFFFFF },
+ 
+ 	{ 3, 0xA0, AMD_FAM10_ALL, AMD_PTYPE_MOB | AMD_PTYPE_DSK,
+ 	  0x00000080, 0x00000080 },	/* [7] PSIVidEnable */
+ 
+ 	{ 3, 0xA0, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00001800, 0x000003800 },	/* [13:11] PllLockTime = 3 */
+ 
+ 	/* Reported Temp Control Register */
+ 	{ 3, 0xA4, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000080, 0x00000080 },	/* [7] TempSlewDnEn = 1 */
+ 
+ 	/* Clock Power/Timing Control 0 Register */
+ 	{ 3, 0xD4, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0xC0000F00, 0xF0000F00 },	/*  [31] NbClkDivApplyAll = 1,
+ 		[30:28] NbClkDiv = 100b,[11:8] ClkRampHystSel = 1111b */
+ 
+ 	/* Clock Power/Timing Control 1 Register */
+ 	{ 3, 0xD8, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x03000016, 0x0F000077 },	/* [6:4] VSRampTime = 1,
+ 		[2:0] VSSlamTime = 6, [27:24] ReConDel = 3 */
+ 
+ 
+ 	/* Clock Power/Timing Control 2 Register */
+ 	{ 3, 0xDC, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00005000, 0x00007000 },	/* [14:12] NbsynPtrAdj = 5 */
+ 
+ 
+ 	/* Extended NB MCA Config Register */
+ 	{ 3, 0x180, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x007003E2, 0x007003E2 },	/* [22:20] = SyncFloodOn_Err = 7,
+ 					   [9] SyncOnUncNbAryEn = 1 ,
+ 					   [8] SyncOnProtEn = 1,
+ 					   [7] SyncFloodOnTgtAbtErr = 1,
+ 					   [6] SyncFloodOnDatErr = 1,
+ 					   [5] DisPciCfgCpuMstAbtRsp = 1,
+ 					   [1] SyncFloodOnUsPwDataErr = 1 */
+ 
+ 	/* errata 346 - Fam10 C2
+ 	 *  System software should set F3x188[22] to 1b. */
+-	{ 3, 0x188, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL,
++	{ 3, 0x188, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL,
+ 	  0x00400000, 0x00400000 },
+ 
+ 	/* L3 Control Register */
+ 	{ 3, 0x1B8, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00001000, 0x00001000 },	/* [12] = L3PrivReplEn */
+ 
+ 	/* IBS Control Register */
+ 	{ 3, 0x1CC, AMD_FAM10_ALL, AMD_PTYPE_ALL,
+ 	  0x00000100, 0x00000100 },	/* [8] = LvtOffsetVal */
+ };
+ 
+ 
+ /*
+  * Default HyperTransport Phy and errata settings.
+  */
+ static const struct {
+ 	u16 htreg;	/* HT Phy Register index */
+ 	u32 revision;
+ 	u32 platform;
+ 	u32 linktype;
+ 	u32 data;
+ 	u32 mask;
+ } fam10_htphy_default[] = {
+ 
+ 	/* Errata 344 - Fam10 C2/D0
+ 	 * System software should set bit 6 of F4x1[9C, 94, 8C, 84]_x[78:70, 68:60]. */
+-	{ 0x60, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x60, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x61, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x61, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x62, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x62, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x63, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x63, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x64, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x64, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x65, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x65, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x66, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x66, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x67, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x67, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x68, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x68, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+ 
+-	{ 0x70, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x70, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x71, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x71, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x72, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x72, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x73, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x73, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x74, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x74, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x75, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x75, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x76, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x76, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x77, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x77, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x78, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x78, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+ 
+ 	/* Errata 354 - Fam10 C2
+ 	 * System software should set bit 6 of F4x1[9C,94,8C,84]_x[58:50, 48:40] for all links. */
+-	{ 0x40, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x40, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x41, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x41, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x42, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x42, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x43, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x43, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x44, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x44, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x45, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x45, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x46, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x46, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x47, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x47, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x48, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x48, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+ 
+-	{ 0x50, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x50, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x51, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x51, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x52, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x52, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x53, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x53, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x54, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x54, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x55, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x55, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x56, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x56, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x57, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x57, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+-	{ 0x58, AMD_RB_C2 | AMD_DA_C2, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x58, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00000040, 0x00000040 },
+ 
+ 	/* Errata 327 - Fam10 C2/D0
+ 	 * BIOS should set the Link Phy Impedance Register[RttCtl]
+ 	 * (F4x1[9C, 94, 8C, 84]_x[D0, C0][31:29]) to 010b and
+ 	 * Link Phy Impedance Register[RttIndex]
+ 	 * (F4x1[9C, 94, 8C, 84]_x[D0, C0][20:16]) to 00100b */
+-	{ 0xC0, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0xC0, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x40040000, 0xe01F0000 },
+-	{ 0xD0, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0xD0, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x40040000, 0xe01F0000 },
+ 
+-	{ 0x520A, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x520A, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00004000, 0x00006000 },	/* HT_PHY_DLL_REG */
+ 
+-	{ 0x530A, AMD_RB_C2 | AMD_DA_C2 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
++	{ 0x530A, AMD_RB_C2 | AMD_DA_C2 | AMD_DA_C3 | AMD_HY_D0, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00004000, 0x00006000 },	/* HT_PHY_DLL_REG */
+ 
+ 	{ 0x520A, AMD_DR_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00004400, 0x00006400 },	/* HT_PHY_DLL_REG */
+ 
+ 	{ 0x530A, AMD_DR_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x00004400, 0x00006400 },	/* HT_PHY_DLL_REG */
+ 
+ 	{ 0xCF, AMD_FAM10_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_HT3,
+ 	  0x00000000, 0x000000FF },	/* Provide clear setting for logical
+ 					   completeness */
+ 
+ 	{ 0xDF, AMD_FAM10_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_HT3,
+ 	  0x00000000, 0x000000FF },	/* Provide clear setting for logical
+ 					   completeness */
+ 
+ 	{ 0xCF, AMD_FAM10_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_HT1,
+ 	  0x0000006D, 0x000000FF },	/* HT_PHY_HT1_FIFO_PTR_OPT_VALUE */
+ 
+ 	{ 0xDF, AMD_FAM10_ALL, AMD_PTYPE_ALL,  HTPHY_LINKTYPE_HT1,
+ 	  0x0000006D, 0x000000FF }, 	/* HT_PHY_HT1_FIFO_PTR_OPT_VALUE */
+ 
+ 	/* Link Phy Receiver Loop Filter Registers */
+ 	{ 0xD1, AMD_FAM10_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_HT3,
+ 	  0x08040000, 0x3FFFC000 },	/* [29:22] LfcMax = 20h,
+ 					   [21:14] LfcMin = 10h */
+ 
+ 	{ 0xC1, AMD_FAM10_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_HT3,
+ 	  0x08040000, 0x3FFFC000 },	/* [29:22] LfcMax = 20h,
+ 					   [21:14] LfcMin = 10h */
+ 
+ 	{ 0xD1, AMD_FAM10_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_HT1,
+ 	  0x04020000, 0x3FFFC000 },	/* [29:22] LfcMax = 10h,
+ 					   [21:14] LfcMin = 08h */
+ 
+ 	{ 0xC1, AMD_FAM10_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_HT1,
+ 	  0x04020000, 0x3FFFC000 },	/* [29:22] LfcMax = 10h,
+ 					   [21:14] LfcMin = 08h */
+ 
+ 	{ 0xC0, AMD_FAM10_ALL, AMD_PTYPE_ALL, HTPHY_LINKTYPE_ALL,
+ 	  0x40040000, 0xe01F0000 },	/* [31:29] RttCtl = 02h,
+ 								   [20:16] RttIndex = 04h */
+ };
+diff --git a/src/cpu/amd/model_10xxx/mc_patch_01000086.h b/src/cpu/amd/model_10xxx/mc_patch_01000086.h
+new file mode 100644
+index 0000000000..d5380366f2
+--- /dev/null
++++ b/src/cpu/amd/model_10xxx/mc_patch_01000086.h
+@@ -0,0 +1,164 @@
++/*
++ ============================================================
++ (c) Advanced Micro Devices, Inc., 2004-2008
++
++ The  enclosed microcode  is intended  to be  used  with AMD
++ Microprocessors.  You  may   copy,  view  and  install  the
++ enclosed microcode  only for development  and deployment of
++ firmware,  BIOS,  or  operating  system code  for  computer
++ systems   that  contain  AMD   processors.   You   are  not
++ authorized  to use  the  enclosed microcode  for any  other
++ purpose.
++
++ THE  MICROCODE IS PROVIDED  "AS IS"  WITHOUT ANY  EXPRESS OR
++ IMPLIED WARRANTY  OF ANY KIND, INCLUDING BUT  NOT LIMITED TO
++ WARRANTIES    OF    MERCHANTABILITY,   NON-    INFRINGEMENT,
++ TITLE,FITNESS  FOR  ANY  PARTICULAR PURPOSE,  OR  WARRANTIES
++ ARISING FROM CONDUCT, COURSE  OF DEALING, OR USAGE OF TRADE.
++ AMD does not assume  any responsibility for any errors which
++ may  appear   in  this   microcode  or  any   other  related
++ information provided  to you by  AMD, or result from  use of
++ this microcode.   AMD is not obligated  to furnish, support,
++ or  make   any  further  information,   software,  technical
++ information, know-how, or show-how available related to this
++ microcode.
++
++ The  microcode is provided  with "RESTRICTED  RIGHTS."  Use,
++ duplication, or disclosure by the U.S. Government is subject
++ to  the  restrictions as  set  forth  in  FAR 52.227-14  and
++ DFAR252.227-7013,  et seq.,  or its  successor.  Use  of the
++ microcode    by    the    U.S.     Government    constitutes
++ acknowledgement  of   AMD's  proprietary  rights   in  them.
++ ============================================================
++*/
++
++
++0x08, 0x20, 0x01, 0x05, 0x86, 0x00, 0x00, 0x01, 0x00, 0x80, 0x20, 0x00,
++0x04, 0xde, 0x30, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++0x41, 0x10, 0x00, 0x00, 0x00, 0xaa, 0xaa, 0xaa, 0xa0, 0x09, 0x00, 0x00,
++0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++0xff, 0xff, 0xff, 0xff, 0x97, 0xd1, 0x7f, 0x00, 0x83, 0x3f, 0x36, 0xc0,
++0xa0, 0x1b, 0xf8, 0x13, 0x0e, 0xbf, 0x0c, 0xb4, 0xf2, 0x1f, 0xf8, 0xa7,
++0x3c, 0xfc, 0x03, 0xfc, 0x40, 0x03, 0x54, 0x00, 0x92, 0xff, 0xe0, 0xbf,
++0xe7, 0xe1, 0x1f, 0xe0, 0x5f, 0x9e, 0xfa, 0xff, 0x9f, 0x87, 0x7f, 0x80,
++0x03, 0xf8, 0xff, 0xc6, 0x01, 0x0e, 0xfc, 0xbd, 0x00, 0xa0, 0x2a, 0x69,
++0x1f, 0xc0, 0x7f, 0xe0, 0xe0, 0xdf, 0xf0, 0x0f, 0x7f, 0x00, 0xff, 0x81,
++0x80, 0x7f, 0xc3, 0x3f, 0xfe, 0x01, 0xfc, 0x07, 0x00, 0xfe, 0x0d, 0xff,
++0x3d, 0x00, 0xf0, 0xff, 0xf0, 0x0f, 0xe0, 0x3f, 0x07, 0xf0, 0x6f, 0xf8,
++0xc0, 0x3f, 0x80, 0xff, 0x1f, 0xc0, 0xbf, 0xe1, 0x03, 0xff, 0x00, 0xfe,
++0x7f, 0x00, 0xff, 0x86, 0xff, 0x1e, 0x00, 0xf8, 0x1f, 0xf8, 0x07, 0xf0,
++0xfc, 0x03, 0xf8, 0x37, 0x7f, 0xe0, 0x1f, 0xc0, 0xf0, 0x0f, 0xe0, 0xdf,
++0xff, 0x81, 0x7f, 0x00, 0xc3, 0x3f, 0x80, 0x7f, 0xfc, 0x7f, 0x0f, 0x00,
++0xf8, 0x0f, 0xfc, 0x03, 0x1b, 0xfe, 0x01, 0xfc, 0xe0, 0x3f, 0xf0, 0x0f,
++0x6f, 0xf8, 0x07, 0xf0, 0x80, 0xff, 0xc0, 0x3f, 0xbf, 0xe1, 0x1f, 0xc0,
++0x00, 0xfe, 0xbf, 0x07, 0x01, 0xfc, 0x07, 0xfe, 0xfe, 0x0d, 0xff, 0x00,
++0x07, 0xf0, 0x1f, 0xf8, 0xf8, 0x37, 0xfc, 0x03, 0x1f, 0xc0, 0x7f, 0xe0,
++0xe0, 0xdf, 0xf0, 0x0f, 0x03, 0x00, 0xff, 0xdf, 0xff, 0x00, 0xfe, 0x03,
++0x00, 0xff, 0x86, 0x7f, 0xfc, 0x03, 0xf8, 0x0f, 0x01, 0xfc, 0x1b, 0xfe,
++0xf0, 0x0f, 0xe0, 0x3f, 0x07, 0xf0, 0x6f, 0xf8, 0xef, 0x01, 0x80, 0xff,
++0x81, 0x7f, 0x00, 0xff, 0x3f, 0x80, 0x7f, 0xc3, 0x07, 0xfe, 0x01, 0xfc,
++0xff, 0x00, 0xfe, 0x0d, 0x1f, 0xf8, 0x07, 0xf0, 0xfc, 0x03, 0xf8, 0x37,
++0xff, 0xf7, 0x00, 0xc0, 0xff, 0xc0, 0x3f, 0x80, 0xe1, 0x1f, 0xc0, 0xbf,
++0xfe, 0x03, 0xff, 0x00, 0x86, 0x7f, 0x00, 0xff, 0xf8, 0x0f, 0xfc, 0x03,
++0x1b, 0xfe, 0x01, 0xfc, 0xe0, 0xff, 0x7b, 0x00, 0xc0, 0x7f, 0xe0, 0x1f,
++0xdf, 0xf0, 0x0f, 0xe0, 0x00, 0xff, 0x81, 0x7f, 0x7f, 0xc3, 0x3f, 0x80,
++0x01, 0xfc, 0x07, 0xfe, 0xfe, 0x0d, 0xff, 0x00, 0x00, 0xf0, 0xff, 0x3d,
++0x0f, 0xe0, 0x3f, 0xf0, 0xf0, 0x6f, 0xf8, 0x07, 0x3f, 0x80, 0xff, 0xc0,
++0xc0, 0xbf, 0xe1, 0x1f, 0xff, 0x00, 0xfe, 0x03, 0x00, 0xff, 0x86, 0x7f,
++0x1e, 0x00, 0xf8, 0xff, 0xf8, 0x07, 0xf0, 0x1f, 0x03, 0xf8, 0x37, 0xfc,
++0xe0, 0x1f, 0xc0, 0x7f, 0x0f, 0xe0, 0xdf, 0xf0, 0x81, 0x7f, 0x00, 0xff,
++0x3f, 0x80, 0x7f, 0xc3, 0x7f, 0x0f, 0x00, 0xfc, 0x0f, 0xfc, 0x03, 0xf8,
++0xfe, 0x01, 0xfc, 0x1b, 0x3f, 0xf0, 0x0f, 0xe0, 0xf8, 0x07, 0xf0, 0x6f,
++0xff, 0xc0, 0x3f, 0x80, 0xe1, 0x1f, 0xc0, 0xbf, 0xfe, 0xbf, 0x07, 0x00,
++0xfc, 0x07, 0xfe, 0x01, 0x0d, 0xff, 0x00, 0xfe, 0xf0, 0x1f, 0xf8, 0x07,
++0x37, 0xfc, 0x03, 0xf8, 0xc0, 0x7f, 0xe0, 0x1f, 0xdf, 0xf0, 0x0f, 0xe0,
++0x00, 0xff, 0xdf, 0x03, 0x00, 0xfe, 0x03, 0xff, 0xff, 0x86, 0x7f, 0x00,
++0x03, 0xf8, 0x0f, 0xfc, 0xfc, 0x1b, 0xfe, 0x01, 0x0f, 0xe0, 0x3f, 0xf0,
++0xf0, 0x6f, 0xf8, 0x07, 0x01, 0x80, 0xff, 0xef, 0x7f, 0x00, 0xff, 0x81,
++0x80, 0x7f, 0xc3, 0x3f, 0xfe, 0x01, 0xfc, 0x07, 0x00, 0xfe, 0x0d, 0xff,
++0xf8, 0x07, 0xf0, 0x1f, 0x03, 0xf8, 0x37, 0xfc, 0xd7, 0x00, 0x80, 0xfb,
++0xc0, 0x3f, 0x80, 0xff, 0x1f, 0xc0, 0xbf, 0xe1, 0x03, 0xff, 0x00, 0xfe,
++0x7f, 0x00, 0xff, 0x86, 0x0f, 0xfc, 0x03, 0xf8, 0xfe, 0x01, 0xfc, 0x1b,
++0xfd, 0x6b, 0x00, 0xa0, 0xff, 0xfe, 0xff, 0xcb, 0xf0, 0xef, 0xf5, 0x7f,
++0x8f, 0x40, 0x3f, 0x00, 0x83, 0xbf, 0xb7, 0xd7, 0xfc, 0x07, 0xfe, 0x01,
++0x0d, 0xff, 0x00, 0xfe, 0xf0, 0xff, 0x3d, 0x00, 0xe4, 0x7f, 0xf9, 0x0f,
++0x79, 0xf8, 0x07, 0xf8, 0x80, 0xff, 0xc0, 0x3f, 0xbf, 0xe1, 0x1f, 0xc0,
++0x00, 0xfe, 0x03, 0xff, 0xff, 0x86, 0x7f, 0x00, 0x00, 0xf0, 0x32, 0x19,
++0x07, 0xf0, 0x1f, 0xf8, 0xf8, 0x37, 0xfc, 0x03, 0x1f, 0xc0, 0x7f, 0xe0,
++0xe0, 0xdf, 0xf0, 0x0f, 0x7f, 0x00, 0xff, 0x81, 0x80, 0x7f, 0xc3, 0x3f,
++0x0f, 0x00, 0xfc, 0x7f, 0xfc, 0x03, 0xf8, 0x0f, 0x01, 0xfc, 0x1b, 0xfe,
++0xf0, 0x0f, 0xe0, 0x3f, 0x07, 0xf0, 0x6f, 0xf8, 0xc0, 0x3f, 0x80, 0xff,
++0x1f, 0xc0, 0xbf, 0xe1, 0xbf, 0x07, 0x00, 0xfe, 0x07, 0xfe, 0x01, 0xfc,
++0xff, 0x00, 0xfe, 0x0d, 0x1f, 0xf8, 0x07, 0xf0, 0xfc, 0x03, 0xf8, 0x37,
++0x7f, 0xe0, 0x1f, 0xc0, 0xf0, 0x0f, 0xe0, 0xdf, 0xff, 0xdf, 0x03, 0x00,
++0xfe, 0x03, 0xff, 0x00, 0x86, 0x7f, 0x00, 0xff, 0xf8, 0x0f, 0xfc, 0x03,
++0x1b, 0xfe, 0x01, 0xfc, 0xe0, 0x3f, 0xf0, 0x0f, 0x6f, 0xf8, 0x07, 0xf0,
++0x80, 0xff, 0xef, 0x01, 0x00, 0xff, 0x81, 0x7f, 0x7f, 0xc3, 0x3f, 0x80,
++0x01, 0xfc, 0x07, 0xfe, 0xfe, 0x0d, 0xff, 0x00, 0x07, 0xf0, 0x1f, 0xf8,
++0xf8, 0x37, 0xfc, 0x03, 0x00, 0xc0, 0xff, 0xf7, 0x3f, 0x80, 0xff, 0xc0,
++0xc0, 0xbf, 0xe1, 0x1f, 0xff, 0x00, 0xfe, 0x03, 0x00, 0xff, 0x86, 0x7f,
++0xfc, 0x03, 0xf8, 0x0f, 0x01, 0xfc, 0x1b, 0xfe, 0x7b, 0x00, 0xe0, 0xff,
++0xe0, 0x1f, 0xc0, 0x7f, 0x0f, 0xe0, 0xdf, 0xf0, 0x81, 0x7f, 0x00, 0xff,
++0x3f, 0x80, 0x7f, 0xc3, 0x07, 0xfe, 0x01, 0xfc, 0xff, 0x00, 0xfe, 0x0d,
++0xff, 0x3d, 0x00, 0xf0, 0x3f, 0xf0, 0x0f, 0xe0, 0xf8, 0x07, 0xf0, 0x6f,
++0xff, 0xc0, 0x3f, 0x80, 0xe1, 0x1f, 0xc0, 0xbf, 0xfe, 0x03, 0xff, 0x00,
++0x86, 0x7f, 0x00, 0xff, 0xf8, 0xff, 0x1e, 0x00, 0xf0, 0x1f, 0xf8, 0x07,
++0x37, 0xfc, 0x03, 0xf8, 0xc0, 0x7f, 0xe0, 0x1f, 0xdf, 0xf0, 0x0f, 0xe0,
++0x00, 0xff, 0x81, 0x7f, 0x7f, 0xc3, 0x3f, 0x80, 0x00, 0xfc, 0x7f, 0x0f,
++0x03, 0xf8, 0x0f, 0xfc, 0xfc, 0x1b, 0xfe, 0x01, 0x0f, 0xe0, 0x3f, 0xf0,
++0xf0, 0x6f, 0xf8, 0x07, 0x3f, 0x80, 0xff, 0xc0, 0xc0, 0xbf, 0xe1, 0x1f,
++0x07, 0x00, 0xfe, 0xbf, 0xfe, 0x01, 0xfc, 0x07, 0x00, 0xfe, 0x0d, 0xff,
++0xf8, 0x07, 0xf0, 0x1f, 0x03, 0xf8, 0x37, 0xfc, 0xe0, 0x1f, 0xc0, 0x7f,
++0x0f, 0xe0, 0xdf, 0xf0, 0xdf, 0x03, 0x00, 0xff, 0x03, 0xff, 0x00, 0xfe,
++0x7f, 0x00, 0xff, 0x86, 0x0f, 0xfc, 0x03, 0xf8, 0xfe, 0x01, 0xfc, 0x1b,
++0x3f, 0xf0, 0x0f, 0xe0, 0xf8, 0x07, 0xf0, 0x6f, 0xff, 0xef, 0x01, 0x80,
++
++
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+diff --git a/src/cpu/amd/model_10xxx/mc_patch_010000b6.h b/src/cpu/amd/model_10xxx/mc_patch_010000b6.h
+new file mode 100644
+index 0000000000..934ef1695d
+--- /dev/null
++++ b/src/cpu/amd/model_10xxx/mc_patch_010000b6.h
+@@ -0,0 +1,164 @@
++/*
++ ============================================================
++ (c) Advanced Micro Devices, Inc., 2004-2008
++
++ The  enclosed microcode  is intended  to be  used  with AMD
++ Microprocessors.  You  may   copy,  view  and  install  the
++ enclosed microcode  only for development  and deployment of
++ firmware,  BIOS,  or  operating  system code  for  computer
++ systems   that  contain  AMD   processors.   You   are  not
++ authorized  to use  the  enclosed microcode  for any  other
++ purpose.
++
++ THE  MICROCODE IS PROVIDED  "AS IS"  WITHOUT ANY  EXPRESS OR
++ IMPLIED WARRANTY  OF ANY KIND, INCLUDING BUT  NOT LIMITED TO
++ WARRANTIES    OF    MERCHANTABILITY,   NON-    INFRINGEMENT,
++ TITLE,FITNESS  FOR  ANY  PARTICULAR PURPOSE,  OR  WARRANTIES
++ ARISING FROM CONDUCT, COURSE  OF DEALING, OR USAGE OF TRADE.
++ AMD does not assume  any responsibility for any errors which
++ may  appear   in  this   microcode  or  any   other  related
++ information provided  to you by  AMD, or result from  use of
++ this microcode.   AMD is not obligated  to furnish, support,
++ or  make   any  further  information,   software,  technical
++ information, know-how, or show-how available related to this
++ microcode.
++
++ The  microcode is provided  with "RESTRICTED  RIGHTS."  Use,
++ duplication, or disclosure by the U.S. Government is subject
++ to  the  restrictions as  set  forth  in  FAR 52.227-14  and
++ DFAR252.227-7013,  et seq.,  or its  successor.  Use  of the
++ microcode    by    the    U.S.     Government    constitutes
++ acknowledgement  of   AMD's  proprietary  rights   in  them.
++ ============================================================
++*/
++
++
++0x09, 0x20, 0x31, 0x07, 0xb6, 0x00, 0x00, 0x01, 0x00, 0x80, 0x20, 0x00,
++0xe9, 0x98, 0xda, 0x6b, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++0x43, 0x10, 0x00, 0x00, 0x00, 0xaa, 0xaa, 0xaa, 0x10, 0x0c, 0x00, 0x00,
++0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++0xff, 0xff, 0xff, 0xff, 0x18, 0x80, 0x38, 0xc0, 0x83, 0x37, 0x80, 0xff,
++0xb8, 0xff, 0xff, 0x13, 0x0e, 0xbf, 0x0c, 0xb6, 0x7a, 0xc4, 0xff, 0x2f,
++0x3c, 0xfc, 0x6b, 0xfd, 0x40, 0x03, 0xd4, 0x00, 0x97, 0xff, 0xff, 0xff,
++0xe7, 0xe1, 0x1f, 0xe0, 0x00, 0xfe, 0xbf, 0xf5, 0x9f, 0x87, 0x7e, 0x22,
++0x01, 0xc6, 0x00, 0xc4, 0x7c, 0x1e, 0xfa, 0x01, 0x00, 0xe0, 0xff, 0x7b,
++0x1f, 0xc0, 0x7f, 0xe0, 0xe0, 0xdf, 0xf0, 0x0f, 0x7f, 0x00, 0xff, 0x81,
++0x80, 0x7f, 0xc3, 0x3f, 0xfe, 0x01, 0xfc, 0x07, 0x00, 0xfe, 0x0d, 0xff,
++0x3d, 0x00, 0xf0, 0xff, 0xf0, 0x0f, 0xe0, 0x3f, 0x07, 0xf0, 0x6f, 0xf8,
++0xc0, 0x3f, 0x80, 0xff, 0x1f, 0xc0, 0xbf, 0xe1, 0x03, 0xff, 0x00, 0xfe,
++0x7f, 0x00, 0xff, 0x86, 0xff, 0x1e, 0x00, 0xf8, 0x1f, 0xf8, 0x07, 0xf0,
++0xfc, 0x03, 0xf8, 0x37, 0x7f, 0xe0, 0x1f, 0xc0, 0xf0, 0x0f, 0xe0, 0xdf,
++0xff, 0x81, 0x7f, 0x00, 0xc3, 0x3f, 0x80, 0x7f, 0xfc, 0x7f, 0x0f, 0x00,
++0xf8, 0x0f, 0xfc, 0x03, 0x1b, 0xfe, 0x01, 0xfc, 0xe0, 0x3f, 0xf0, 0x0f,
++0x6f, 0xf8, 0x07, 0xf0, 0x80, 0xff, 0xc0, 0x3f, 0xbf, 0xe1, 0x1f, 0xc0,
++0x00, 0xfe, 0xbf, 0x07, 0x01, 0xfc, 0x07, 0xfe, 0xfe, 0x0d, 0xff, 0x00,
++0x07, 0xf0, 0x1f, 0xf8, 0xf8, 0x37, 0xfc, 0x03, 0x1f, 0xc0, 0x7f, 0xe0,
++0xe0, 0xdf, 0xf0, 0x0f, 0x03, 0x00, 0xff, 0xdf, 0xff, 0x00, 0xfe, 0x03,
++0x00, 0xff, 0x86, 0x7f, 0xfc, 0x03, 0xf8, 0x0f, 0x01, 0xfc, 0x1b, 0xfe,
++0xf0, 0x0f, 0xe0, 0x3f, 0x07, 0xf0, 0x6f, 0xf8, 0xef, 0x01, 0x80, 0xff,
++0x81, 0x7f, 0x00, 0xff, 0x3f, 0x80, 0x7f, 0xc3, 0x07, 0xfe, 0x01, 0xfc,
++0xff, 0x00, 0xfe, 0x0d, 0x1f, 0xf8, 0x07, 0xf0, 0xfc, 0x03, 0xf8, 0x37,
++0xff, 0xf7, 0x00, 0xc0, 0xff, 0xc0, 0x3f, 0x80, 0xe1, 0x1f, 0xc0, 0xbf,
++0xfe, 0x03, 0xff, 0x00, 0x86, 0x7f, 0x00, 0xff, 0xf8, 0x0f, 0xfc, 0x03,
++0x1b, 0xfe, 0x01, 0xfc, 0xe0, 0xff, 0x7b, 0x00, 0xc0, 0x7f, 0xe0, 0x1f,
++0xdf, 0xf0, 0x0f, 0xe0, 0x00, 0xff, 0x81, 0x7f, 0x7f, 0xc3, 0x3f, 0x80,
++0x01, 0xfc, 0x07, 0xfe, 0xfe, 0x0d, 0xff, 0x00, 0x00, 0xf0, 0xff, 0x3d,
++0x0f, 0xe0, 0x3f, 0xf0, 0xf0, 0x6f, 0xf8, 0x07, 0x3f, 0x80, 0xff, 0xc0,
++0xc0, 0xbf, 0xe1, 0x1f, 0xff, 0x00, 0xfe, 0x03, 0x00, 0xff, 0x86, 0x7f,
++0x1e, 0x00, 0xf8, 0xff, 0xf8, 0x07, 0xf0, 0x1f, 0x03, 0xf8, 0x37, 0xfc,
++0xe0, 0x1f, 0xc0, 0x7f, 0x0f, 0xe0, 0xdf, 0xf0, 0x81, 0x7f, 0x00, 0xff,
++0x3f, 0x80, 0x7f, 0xc3, 0x7f, 0x0f, 0x00, 0xfc, 0x0f, 0xfc, 0x03, 0xf8,
++0xfe, 0x01, 0xfc, 0x1b, 0x3f, 0xf0, 0x0f, 0xe0, 0xf8, 0x07, 0xf0, 0x6f,
++0xff, 0xc0, 0x3f, 0x80, 0xe1, 0x1f, 0xc0, 0xbf, 0xfe, 0xbf, 0x07, 0x00,
++0xfc, 0x07, 0xfe, 0x01, 0x0d, 0xff, 0x00, 0xfe, 0xf0, 0x1f, 0xf8, 0x07,
++0x37, 0xfc, 0x03, 0xf8, 0xc0, 0x7f, 0xe0, 0x1f, 0xdf, 0xf0, 0x0f, 0xe0,
++0x00, 0xff, 0xdf, 0x03, 0x00, 0xfe, 0x03, 0xff, 0xff, 0x86, 0x7f, 0x00,
++0x03, 0xf8, 0x0f, 0xfc, 0xfc, 0x1b, 0xfe, 0x01, 0x0f, 0xe0, 0x3f, 0xf0,
++0xf0, 0x6f, 0xf8, 0x07, 0x01, 0x80, 0xff, 0xef, 0x7f, 0x00, 0xff, 0x81,
++0x80, 0x7f, 0xc3, 0x3f, 0xfe, 0x01, 0xfc, 0x07, 0x00, 0xfe, 0x0d, 0xff,
++0xf8, 0x07, 0xf0, 0x1f, 0x03, 0xf8, 0x37, 0xfc, 0xd7, 0x00, 0x80, 0xf8,
++0xc0, 0x3f, 0x80, 0xff, 0x1f, 0xc0, 0xbf, 0xe1, 0x03, 0xff, 0x00, 0xfe,
++0x7f, 0x00, 0xff, 0x86, 0x0f, 0xfc, 0x03, 0xf8, 0xfe, 0x01, 0xfc, 0x1b,
++0xfc, 0x6b, 0x00, 0x20, 0x04, 0xff, 0xbf, 0xe8, 0xf0, 0xaf, 0xf5, 0xf3,
++0xff, 0xd9, 0x7a, 0x00, 0x83, 0x3f, 0x31, 0xc0, 0x0c, 0x7d, 0xe3, 0x00,
++0x0f, 0xfe, 0x80, 0x5e, 0xf0, 0xff, 0x3d, 0x00, 0x65, 0xfe, 0xff, 0x9f,
++0x7f, 0xf8, 0xc7, 0xba, 0x96, 0xf2, 0xff, 0x7f, 0xfa, 0xe1, 0x1f, 0xeb,
++0x45, 0x0e, 0xf8, 0xff, 0x9f, 0x87, 0x7f, 0x80, 0x00, 0xf8, 0xff, 0x1e,
++0x07, 0xf0, 0x5f, 0x8c, 0x7b, 0x1d, 0xf8, 0x13, 0xbf, 0xe8, 0x1a, 0xff,
++0xf4, 0xf3, 0xf0, 0x4f, 0xff, 0x2f, 0xe3, 0xff, 0xd7, 0xf5, 0xc3, 0xbf,
++0x0f, 0x00, 0xfc, 0x7f, 0xd6, 0x03, 0xf8, 0xdf, 0x89, 0x01, 0x1e, 0xfc,
++0xfb, 0x0f, 0xe0, 0x3f, 0xd6, 0xa2, 0x7f, 0xf8, 0xff, 0x7f, 0x82, 0xff,
++0x97, 0xc1, 0xd6, 0xe1, 0x40, 0x02, 0x00, 0x14, 0x7f, 0xff, 0x01, 0xfc,
++0xdf, 0x5a, 0xf4, 0x0f, 0xfe, 0xff, 0xef, 0x32, 0xfc, 0x03, 0x9c, 0x35,
++0x7f, 0xf7, 0x5f, 0xcb, 0xf0, 0xaf, 0xf5, 0xff, 0xff, 0xdf, 0x03, 0x00,
++0xfe, 0x03, 0xff, 0x5a, 0x87, 0x5f, 0xad, 0x2b, 0xf8, 0xdf, 0xd6, 0x03,
++0x1e, 0xfa, 0x89, 0x7c, 0x20, 0x7d, 0xc0, 0x9f, 0x75, 0xf8, 0x65, 0xb0,
++0x80, 0xff, 0xef, 0x01, 0x00, 0xff, 0xdb, 0x7a, 0xc0, 0x83, 0x3f, 0x31,
++0x01, 0xfc, 0x07, 0xfe, 0xf4, 0x0f, 0xdf, 0x5a, 0x4f, 0xa0, 0x3e, 0xe0,
++0xd8, 0x3a, 0xfc, 0x32, 0x00, 0xc0, 0x01, 0x48, 0x3f, 0x80, 0xff, 0xc0,
++0xc0, 0xbf, 0xe1, 0x1f, 0xff, 0x00, 0xfe, 0x03, 0x00, 0xff, 0x86, 0x7f,
++0xfc, 0x03, 0xf8, 0x0f, 0x01, 0xfc, 0x1b, 0xfe, 0x7b, 0x00, 0xe0, 0xff,
++0xe0, 0x1f, 0xc0, 0x7f, 0x0f, 0xe0, 0xdf, 0xf0, 0x81, 0x7f, 0x00, 0xff,
++0x3f, 0x80, 0x7f, 0xc3, 0x07, 0xfe, 0x01, 0xfc, 0xff, 0x00, 0xfe, 0x0d,
++0xff, 0x3d, 0x00, 0xf0, 0x3f, 0xf0, 0x0f, 0xe0, 0xf8, 0x07, 0xf0, 0x6f,
++0xff, 0xc0, 0x3f, 0x80, 0xe1, 0x1f, 0xc0, 0xbf, 0xfe, 0x03, 0xff, 0x00,
++0x86, 0x7f, 0x00, 0xff, 0xf8, 0xff, 0x1e, 0x00, 0xf0, 0x1f, 0xf8, 0x07,
++0x37, 0xfc, 0x03, 0xf8, 0xc0, 0x7f, 0xe0, 0x1f, 0xdf, 0xf0, 0x0f, 0xe0,
++0x00, 0xff, 0x81, 0x7f, 0x7f, 0xc3, 0x3f, 0x80, 0x00, 0xfc, 0x7f, 0x0f,
++0x03, 0xf8, 0x0f, 0xfc, 0xfc, 0x1b, 0xfe, 0x01, 0x0f, 0xe0, 0x3f, 0xf0,
++0xf0, 0x6f, 0xf8, 0x07, 0x3f, 0x80, 0xff, 0xc0, 0xc0, 0xbf, 0xe1, 0x1f,
++0x07, 0x00, 0xfe, 0xbf, 0xfe, 0x01, 0xfc, 0x07, 0x00, 0xfe, 0x0d, 0xff,
++0xf8, 0x07, 0xf0, 0x1f, 0x03, 0xf8, 0x37, 0xfc, 0xe0, 0x1f, 0xc0, 0x7f,
++0x0f, 0xe0, 0xdf, 0xf0, 0xdf, 0x03, 0x00, 0xff, 0x03, 0xff, 0x00, 0xfe,
++0x7f, 0x00, 0xff, 0x86, 0x0f, 0xfc, 0x03, 0xf8, 0xfe, 0x01, 0xfc, 0x1b,
++0x3f, 0xf0, 0x0f, 0xe0, 0xf8, 0x07, 0xf0, 0x6f, 0xff, 0xef, 0x01, 0x80,
++
++
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
++0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+diff --git a/src/cpu/amd/model_10xxx/model_10xxx_init.c b/src/cpu/amd/model_10xxx/model_10xxx_init.c
+index ef6d8e084b..5a19547b4d 100644
+--- a/src/cpu/amd/model_10xxx/model_10xxx_init.c
++++ b/src/cpu/amd/model_10xxx/model_10xxx_init.c
+@@ -1,147 +1,149 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2007 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <cpu/x86/msr.h>
+ #include <cpu/amd/mtrr.h>
+ #include <device/device.h>
+ #include <device/pci.h>
+ #include <string.h>
+ #include <cpu/x86/msr.h>
+ #include <cpu/x86/pae.h>
+ #include <pc80/mc146818rtc.h>
+ #include <cpu/x86/lapic.h>
+ 
+ #include "../../../northbridge/amd/amdfam10/amdfam10.h"
+ 
+ #include <cpu/amd/model_10xxx_rev.h>
+ #include <cpu/cpu.h>
+ #include <cpu/x86/cache.h>
+ #include <cpu/x86/mtrr.h>
+ #include <cpu/amd/multicore.h>
+ #include <cpu/amd/model_10xxx_msr.h>
+ 
+ #define MCI_STATUS 0x401
+ 
+ msr_t rdmsr_amd(u32 index)
+ {
+ 	msr_t result;
+ 	__asm__ __volatile__(
+ 		"rdmsr"
+ 		:"=a"(result.lo), "=d"(result.hi)
+ 		:"c"(index), "D"(0x9c5a203a)
+ 	);
+ 	return result;
+ }
+ 
+ void wrmsr_amd(u32 index, msr_t msr)
+ {
+ 	__asm__ __volatile__(
+ 		"wrmsr"
+ 		:	/* No outputs */
+ 		:"c"(index), "a"(msr.lo), "d"(msr.hi), "D"(0x9c5a203a)
+ 	);
+ }
+ 
+ static void model_10xxx_init(device_t dev)
+ {
+ 	u8 i;
+ 	msr_t msr;
+ 	struct node_core_id id;
+ #if CONFIG_LOGICAL_CPUS == 1
+ 	u32 siblings;
+ #endif
+ 
+ 	id = get_node_core_id(read_nb_cfg_54());	/* nb_cfg_54 can not be set */
+ 	printk(BIOS_DEBUG, "nodeid = %02d, coreid = %02d\n", id.nodeid, id.coreid);
+ 
+ 	/* Turn on caching if we haven't already */
+ 	x86_enable_cache();
+ 	amd_setup_mtrrs();
+ 	x86_mtrr_check();
+ 
+ 	disable_cache();
+ 
+ 	/* zero the machine check error status registers */
+ 	msr.lo = 0;
+ 	msr.hi = 0;
+ 	for (i = 0; i < 5; i++) {
+ 		wrmsr(MCI_STATUS + (i * 4), msr);
+ 	}
+ 
+ 	enable_cache();
+ 
+ 	/* Enable the local cpu apics */
+ 	setup_lapic();
+ 
+ 	/* Set the processor name string */
+ 	init_processor_name();
+ 
+ #if CONFIG_LOGICAL_CPUS == 1
+ 	siblings = cpuid_ecx(0x80000008) & 0xff;
+ 
+ 	if (siblings > 0) {
+ 		msr = rdmsr_amd(CPU_ID_FEATURES_MSR);
+ 		msr.lo |= 1 << 28;
+ 		wrmsr_amd(CPU_ID_FEATURES_MSR, msr);
+ 
+ 		msr = rdmsr_amd(CPU_ID_EXT_FEATURES_MSR);
+ 		msr.hi |= 1 << (33 - 32);
+ 		wrmsr_amd(CPU_ID_EXT_FEATURES_MSR, msr);
+ 	}
+ 	printk(BIOS_DEBUG, "siblings = %02d, ", siblings);
+ #endif
+ 
+ 	/* DisableCf8ExtCfg */
+ 	msr = rdmsr(NB_CFG_MSR);
+ 	msr.hi &= ~(1 << (46 - 32));
+ 	wrmsr(NB_CFG_MSR, msr);
+ 
+ 	/* Write protect SMM space with SMMLOCK. */
+ 	msr = rdmsr(HWCR_MSR);
+ 	msr.lo |= (1 << 0);
+ 	wrmsr(HWCR_MSR, msr);
+ 
+ }
+ 
+ static struct device_operations cpu_dev_ops = {
+ 	.init = model_10xxx_init,
+ };
+ 
+ static struct cpu_device_id cpu_table[] = {
+ //AMD_GH_SUPPORT
+ 	{ X86_VENDOR_AMD, 0x100f00 },		/* SH-F0 L1 */
+ 	{ X86_VENDOR_AMD, 0x100f10 },		/* M2 */
+ 	{ X86_VENDOR_AMD, 0x100f20 },		/* S1g1 */
+ 	{ X86_VENDOR_AMD, 0x100f21 },
+ 	{ X86_VENDOR_AMD, 0x100f2A },
+ 	{ X86_VENDOR_AMD, 0x100f22 },
+ 	{ X86_VENDOR_AMD, 0x100f23 },
+ 	{ X86_VENDOR_AMD, 0x100f40 },		/* RB-C0 */
+ 	{ X86_VENDOR_AMD, 0x100F42 },           /* RB-C2 */ 
++	{ X86_VENDOR_AMD, 0x100F43 },           /* RB-C3 */ 
+ 	{ X86_VENDOR_AMD, 0x100F52 },           /* BL-C2 */ 
+ 	{ X86_VENDOR_AMD, 0x100F62 },           /* DA-C2 */ 
++	{ X86_VENDOR_AMD, 0x100F63 },           /* DA-C3 */ 
+ 	{ X86_VENDOR_AMD, 0x100F80 },           /* HY-D0 */ 
+ 	{ 0, 0 },
+ };
+ 
+ static const struct cpu_driver model_10xxx __cpu_driver = {
+ 	.ops      = &cpu_dev_ops,
+ 	.id_table = cpu_table,
+ };
+diff --git a/src/cpu/amd/model_10xxx/update_microcode.c b/src/cpu/amd/model_10xxx/update_microcode.c
+index b6c2c22945..11c710a3ea 100644
+--- a/src/cpu/amd/model_10xxx/update_microcode.c
++++ b/src/cpu/amd/model_10xxx/update_microcode.c
+@@ -1,105 +1,109 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2007 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+  */
+ 
+ 
+ #ifndef __PRE_RAM__
+ #include <console/console.h>
+ #include <device/device.h>
+ #include <device/pci.h>
+ #include <string.h>
+ #endif
+ 
+ #ifndef __ROMCC__
+ #include <cpu/amd/microcode.h>
+ #endif
+ 
+ static const u8 microcode_updates[] __attribute__ ((aligned(16))) = {
+ 
+ #ifdef __PRE_RAM__
+ 
+ /* From the Revision Guide :
+  * Equivalent Processor Table for AMD Family 10h Processors
+  *
+  * Installed Processor   Equivalent Processor   Patch Level
+  * Revision ID           Revision ID
+  * 00100F00h             1000h                  01000020h
+  * 00100F01h             1000h                  01000020h
+  * 00100F02h             1000h                  01000020h
+  * 00100F20h             1020h                  01000096h
+  * 00100F21h (DR-B1)     1020h                  01000096h
+  * 00100F2Ah (DR-BA)     1020h                  01000096h
+  * 00100F22h (DR-B2)     1022h                  01000095h
+  * 00100F23h (DR-B3)     1022h                  01000095h
+  * 00100F42h (RB-C2)     1041h                  01000086h
++ * 00100F43h (RB-C3)     1043h                  010000b6h
+  * 00100F62h (DA-C2)     1062h                  0100009Fh
++ * 00100F63h (DA-C3)     1043h                  010000b6h
+  */
+ 
+ #include CONFIG_AMD_UCODE_PATCH_FILE
+ 
+ #endif
+ 	/*  Dummy terminator  */
+ 	0x0, 0x0, 0x0, 0x0,
+ 	0x0, 0x0, 0x0, 0x0,
+ 	0x0, 0x0, 0x0, 0x0,
+ 	0x0, 0x0, 0x0, 0x0,
+ };
+ 
+ static u32 get_equivalent_processor_rev_id(u32 orig_id) {
+ 	static unsigned id_mapping_table[] = {
+ 		0x100f00, 0x1000,
+ 		0x100f01, 0x1000,
+ 		0x100f02, 0x1000,
+ 		0x100f20, 0x1020,
+ 		0x100f21, 0x1020,
+ 		0x100f2A, 0x1020,
+ 		0x100f22, 0x1022,
+ 		0x100f23, 0x1022,
+ 		0x100f42, 0x1041,
++		0x100f43, 0x1043,
+ 		0x100f62, 0x1062,
++		0x100f63, 0x1043,
+ 	};
+ 
+ 	u32 new_id;
+ 	int i;
+ 
+ 	new_id = 0;
+ 
+ 	for (i = 0; i < sizeof(id_mapping_table); i += 2 ) {
+ 		if(id_mapping_table[i]==orig_id) {
+ 			new_id = id_mapping_table[i + 1];
+ 			break;
+ 		}
+ 	}
+ 
+ 	return new_id;
+ 
+ }
+ 
+ void update_microcode(u32 cpu_deviceid)
+ {
+ 	u32 equivalent_processor_rev_id;
+ 
+ 	/* Update the microcode */
+ 	equivalent_processor_rev_id = get_equivalent_processor_rev_id(cpu_deviceid );
+ 	if (equivalent_processor_rev_id != 0) {
+ 		amd_update_microcode((void *) microcode_updates, equivalent_processor_rev_id);
+ 	} else {
+ 		printk(BIOS_DEBUG, "microcode: rev id not found. Skipping microcode patch!\n");
+ 	}
+ 
+ }
+diff --git a/src/cpu/amd/socket_AM3/Kconfig b/src/cpu/amd/socket_AM3/Kconfig
+new file mode 100644
+index 0000000000..6b8d12d3d4
+--- /dev/null
++++ b/src/cpu/amd/socket_AM3/Kconfig
+@@ -0,0 +1,47 @@
++config CPU_AMD_SOCKET_AM3
++	bool
++	select CPU_AMD_MODEL_10XXX
++	select HT3_SUPPORT
++	select PCI_IO_CFG_EXT
++
++config CPU_SOCKET_TYPE
++	hex
++	default 0x11
++	depends on CPU_AMD_SOCKET_AM3
++
++# DDR3 and REG
++config DIMM_SUPPORT
++	hex
++	default 0x0005
++	depends on CPU_AMD_SOCKET_AM3
++
++config EXT_RT_TBL_SUPPORT
++	bool
++	default n
++	depends on CPU_AMD_SOCKET_AM3
++
++config EXT_CONF_SUPPORT
++	bool
++	default n
++	depends on CPU_AMD_SOCKET_AM3
++
++config CBB
++	hex
++	default 0x0
++	depends on CPU_AMD_SOCKET_AM3
++
++config CDB
++	hex
++	default 0x18
++	depends on CPU_AMD_SOCKET_AM3
++
++config XIP_ROM_BASE
++	hex
++	default 0xfff80000
++	depends on CPU_AMD_SOCKET_AM3
++
++config XIP_ROM_SIZE
++	hex
++	default 0x80000
++	depends on CPU_AMD_SOCKET_AM3
++
+diff --git a/src/cpu/amd/socket_AM3/Makefile.inc b/src/cpu/amd/socket_AM3/Makefile.inc
+new file mode 100644
+index 0000000000..9799b7fb4d
+--- /dev/null
++++ b/src/cpu/amd/socket_AM3/Makefile.inc
+@@ -0,0 +1,13 @@
++obj-y += socket_AM3.o
++subdirs-y += ../model_10xxx
++subdirs-y += ../quadcore
++subdirs-y += ../mtrr
++subdirs-y += ../microcode
++subdirs-y += ../../x86/tsc
++subdirs-y += ../../x86/lapic
++subdirs-y += ../../x86/cache
++subdirs-y += ../../x86/pae
++subdirs-y += ../../x86/smm
++subdirs-y += ../../x86/mtrr
++
++cpu_incs += $(src)/cpu/amd/car/cache_as_ram.inc
+diff --git a/src/cpu/amd/socket_AM3/chip.h b/src/cpu/amd/socket_AM3/chip.h
+new file mode 100644
+index 0000000000..16e0935225
+--- /dev/null
++++ b/src/cpu/amd/socket_AM3/chip.h
+@@ -0,0 +1,23 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2010 Advanced Micro Devices, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++extern struct chip_operations cpu_amd_socket_AM3_ops;
++
++struct cpu_amd_socket_AM3_config {
++};
+diff --git a/src/cpu/amd/socket_AM3/socket_AM3.c b/src/cpu/amd/socket_AM3/socket_AM3.c
+new file mode 100644
+index 0000000000..75b3970cfe
+--- /dev/null
++++ b/src/cpu/amd/socket_AM3/socket_AM3.c
+@@ -0,0 +1,25 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2010 Advanced Micro Devices, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <device/device.h>
++#include "chip.h"
++
++struct chip_operations cpu_amd_socket_AM3_ops = {
++	CHIP_NAME("socket AM3")
++};
+diff --git a/src/cpu/amd/socket_ASB2/Kconfig b/src/cpu/amd/socket_ASB2/Kconfig
+new file mode 100644
+index 0000000000..3aa95c300f
+--- /dev/null
++++ b/src/cpu/amd/socket_ASB2/Kconfig
+@@ -0,0 +1,46 @@
++config CPU_AMD_SOCKET_ASB2
++	bool
++	select CPU_AMD_MODEL_10XXX
++	select HT3_SUPPORT
++	select PCI_IO_CFG_EXT
++
++config CPU_SOCKET_TYPE
++	hex
++	default 0x13
++	depends on CPU_AMD_SOCKET_ASB2
++
++# DDR3 and REG
++config DIMM_SUPPORT
++	hex
++	default 0x0005
++	depends on CPU_AMD_SOCKET_ASB2
++
++config EXT_RT_TBL_SUPPORT
++	bool
++	default n
++	depends on CPU_AMD_SOCKET_ASB2
++
++config EXT_CONF_SUPPORT
++	bool
++	default n
++	depends on CPU_AMD_SOCKET_ASB2
++
++config CBB
++	hex
++	default 0x0
++	depends on CPU_AMD_SOCKET_ASB2
++
++config CDB
++	hex
++	default 0x18
++	depends on CPU_AMD_SOCKET_ASB2
++
++config XIP_ROM_BASE
++	hex
++	default 0xfff80000
++	depends on CPU_AMD_SOCKET_ASB2
++
++config XIP_ROM_SIZE
++	hex
++	default 0x80000
++	depends on CPU_AMD_SOCKET_ASB2
+diff --git a/src/cpu/amd/socket_ASB2/Makefile.inc b/src/cpu/amd/socket_ASB2/Makefile.inc
+new file mode 100644
+index 0000000000..580cbbce2d
+--- /dev/null
++++ b/src/cpu/amd/socket_ASB2/Makefile.inc
+@@ -0,0 +1,13 @@
++obj-y += socket_ASB2.o
++subdirs-y += ../model_10xxx
++subdirs-y += ../quadcore
++subdirs-y += ../mtrr
++subdirs-y += ../microcode
++subdirs-y += ../../x86/tsc
++subdirs-y += ../../x86/lapic
++subdirs-y += ../../x86/cache
++subdirs-y += ../../x86/pae
++subdirs-y += ../../x86/smm
++subdirs-y += ../../x86/mtrr
++
++cpu_incs += $(src)/cpu/amd/car/cache_as_ram.inc
+diff --git a/src/cpu/amd/socket_ASB2/chip.h b/src/cpu/amd/socket_ASB2/chip.h
+new file mode 100644
+index 0000000000..3a53696630
+--- /dev/null
++++ b/src/cpu/amd/socket_ASB2/chip.h
+@@ -0,0 +1,23 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2010 Advanced Micro Devices, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++extern struct chip_operations cpu_amd_socket_ASB2_ops;
++
++struct cpu_amd_socket_ASB2_config {
++};
+diff --git a/src/cpu/amd/socket_ASB2/socket_ASB2.c b/src/cpu/amd/socket_ASB2/socket_ASB2.c
+new file mode 100644
+index 0000000000..fd3b522aa5
+--- /dev/null
++++ b/src/cpu/amd/socket_ASB2/socket_ASB2.c
+@@ -0,0 +1,25 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2010 Advanced Micro Devices, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <device/device.h>
++#include "chip.h"
++
++struct chip_operations cpu_amd_socket_ASB2_ops = {
++	CHIP_NAME("socket ASB2")
++};

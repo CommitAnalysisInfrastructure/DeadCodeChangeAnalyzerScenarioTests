@@ -1,0 +1,1336 @@
+commit 00b579a.txt
+Author: Alexandru Gagniuc <mr.nuke.me@gmail.com>
+Date:   Fri Jul 20 00:11:21 2012 -0500
+
+    buildsystem: Make CPU microcode updating more configurable
+    
+    This patch aims to improve the microcode in CBFS handling that was
+    brought by the last patches from Stefan and the Chromium team.
+    
+    Choices in Kconfig
+      - 1) Generate microcode from tree (default)
+      - 2) Include external microcode file
+      - 3) Do not put microcode in CBFS
+    
+    The idea is to give the user full control over including non-free
+    blobs in the final ROM image.
+    
+    MICROCODE_INCLUDE_PATH Kconfig variable is eliminated. Microcode
+    is handled by a special class, cpu_microcode, as such:
+    
+    cpu_microcode-y += microcode_file.c
+    
+    MICROCODE_IN_CBFS should, in the future, be eliminated. Right now it is
+    needed by intel microcode updating. Once all intel cpus are converted to
+    cbfs updating, this variable can go away.
+    
+    These files are then compiled and assembled into a binary CBFS file.
+    The advantage of doing it this way versus the current method is that
+      1) The rule is CPU-agnostic
+      2) Gives user more control over if and how to include microcode blobs
+      3) The rules for building the microcode binary are kept in
+       src/cpu/Makefile.inc, and thus would not clobber the other makefiles,
+       which are already overloaded and very difficult to navigate.
+    
+    Change-Id: I38d0c9851691aa112e93031860e94895857ebb76
+    Signed-off-by: Alexandru Gagniuc <mr.nuke.me@gmail.com>
+    Reviewed-on: http://review.coreboot.org/1245
+    Tested-by: build bot (Jenkins)
+    Reviewed-by: Anton Kochkov <anton.kochkov@gmail.com>
+    Reviewed-by: Patrick Georgi <patrick@georgi-clan.de>
+
+diff --git a/Makefile.inc b/Makefile.inc
+index adc41bfd64..bcf0e6e14a 100644
+--- a/Makefile.inc
++++ b/Makefile.inc
+@@ -1,314 +1,314 @@
+ ##
+ ## This file is part of the coreboot project.
+ ##
+ ## Copyright (C) 2011 secunet Security Networks AG
+ ##
+ ## This program is free software; you can redistribute it and/or modify
+ ## it under the terms of the GNU General Public License as published by
+ ## the Free Software Foundation; version 2 of the License.
+ ##
+ ## This program is distributed in the hope that it will be useful,
+ ## but WITHOUT ANY WARRANTY; without even the implied warranty of
+ ## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ ## GNU General Public License for more details.
+ ##
+ ## You should have received a copy of the GNU General Public License
+ ## along with this program; if not, write to the Free Software
+ ## Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ ##
+ 
+ #######################################################################
+ # misleadingly named, this is the coreboot version
+ export KERNELVERSION := $(shell if [ -d "$(top)/.git" -a -f "`which git`" ]; then git describe --dirty 2>/dev/null || git describe; else echo unknown; fi)
+ 
+ #######################################################################
+ # Basic component discovery
+ ARCHDIR-$(CONFIG_ARCH_X86) := x86
+ MAINBOARDDIR=$(call strip_quotes,$(CONFIG_MAINBOARD_DIR))
+ export MAINBOARDDIR
+ 
+ ## Final build results, which CBFSTOOL uses to create the final
+ ## rom image file, are placed under $(objcbfs).
+ ## These typically have suffixes .debug .elf .bin and .map
+ export objcbfs := $(obj)/cbfs/$(CONFIG_CBFS_PREFIX)
+ 
+ ## Based on the active configuration, Makefile conditionally collects
+ ## the required assembly includes and saves them in a file.
+ ## Such files that do not have a clear one-to-one relation to a source
+ ## file under src/ are placed and built under $(objgenerated)
+ export objgenerated := $(obj)/generated
+ 
+ #######################################################################
+ # root rule to resolve if in build mode (ie. configuration exists)
+ real-target: $(obj)/config.h coreboot
+ coreboot: build-dirs $(obj)/coreboot.rom
+ 
+ #######################################################################
+ # our phony targets
+ PHONY+= clean-abuild coreboot lint lint-stable build-dirs
+ 
+ #######################################################################
+ # root source directories of coreboot
+ subdirs-y := src/lib src/boot src/console src/devices src/ec src/southbridge
+ subdirs-y += src/northbridge src/superio src/drivers src/cpu src/vendorcode
+ subdirs-y += util/cbfstool util/sconfig util/nvramtool
+ subdirs-y += src/arch/$(ARCHDIR-y)
+ subdirs-y += src/mainboard/$(MAINBOARDDIR)
+ 
+ subdirs-y += site-local
+ 
+ #######################################################################
+ # Add source classes and their build options
+-classes-y := ramstage romstage driver smm
++classes-y := ramstage romstage driver smm cpu_microcode
+ 
+ romstage-c-ccopts:=-D__PRE_RAM__
+ romstage-S-ccopts:=-D__PRE_RAM__
+ ifeq ($(CONFIG_TRACE),y)
+ ramstage-c-ccopts:= -finstrument-functions
+ endif
+ 
+ ifeq ($(CONFIG_USE_BLOBS),y)
+ forgetthis:=$(shell git submodule update --init --checkout 3rdparty)
+ else
+ ifeq ($(CONFIG_REQUIRES_BLOB),y)
+ $(error Your current configuration requires binary-only components, but you did not choose to use them)
+ endif
+ endif
+ 
+ smm-c-ccopts:=-D__SMM__
+ smm-S-ccopts:=-D__SMM__
+ 
+ # SMM TSEG base is dynamic
+ ifeq ($(CONFIG_SMM_TSEG),y)
+ smm-c-ccopts += -fpic
+ endif
+ 
+ ramstage-c-deps:=$$(OPTION_TABLE_H)
+ romstage-c-deps:=$$(OPTION_TABLE_H)
+ 
+ #######################################################################
+ # Add handler to compile ACPI's ASL
+ define ramstage-objs_asl_template
+ $(obj)/$(1).ramstage.o: src/$(1).asl $(obj)/config.h
+ 	@printf "    IASL       $$(subst $(top)/,,$$(@))\n"
+ 	$(CC) -x assembler-with-cpp -E -MMD -MT $$(@) -D__ACPI__ -P -include $(src)/include/kconfig.h -I$(obj) -I$(src) -I$(src)/include -I$(src)/arch/$(ARCHDIR-y)/include -I$(src)/mainboard/$(MAINBOARDDIR) $$< -o $$(basename $$@).asl
+ 	cd $$(dir $$@); $(IASL) -p $$(notdir $$@) -tc $$(notdir $$(basename $$@)).asl
+ 	mv $$(basename $$@).hex $$(basename $$@).c
+ 	$(CC) $$(CFLAGS) $$(if $$(subst dsdt,,$$(basename $$(notdir $(1)))), -DAmlCode=AmlCode_$$(basename $$(notdir $(1)))) -c -o $$@ $$(basename $$@).c
+ 	# keep %.o: %.c rule from catching the temporary .c file after a make clean
+ 	mv $$(basename $$@).c $$(basename $$@).hex
+ endef
+ 
+ #######################################################################
+ # Parse plaintext cmos defaults into binary format
+ # arg1: source file
+ # arg2: binary file name
+ cbfs-files-processor-nvramtool= \
+ 	$(eval $(2): $(1) $(src)/mainboard/$(MAINBOARDDIR)/cmos.layout | $(objutil)/nvramtool/nvramtool ; \
+ 		printf "    CREATE     $(2) (from $(1))\n"; $(objutil)/nvramtool/nvramtool -y $(src)/mainboard/$(MAINBOARDDIR)/cmos.layout -D $(2).tmp -p $(1) && mv $(2).tmp $(2))
+ 
+ #######################################################################
+ # Link VSA binary to ELF-ish stage
+ # arg1: source file
+ # arg2: binary file name
+ cbfs-files-processor-vsa= \
+ 	$(eval $(2): $(1) ; \
+ 		printf "    CREATE     $(2) (from $(1))\n";  $(OBJCOPY) --set-start 0x20 --adjust-vma 0x60000 -I binary -O elf32-i386 -B i386 $(1) $(2).tmp && $(LD) -m elf_i386 -e 0x60020 --section-start .data=0x60000 $(2).tmp -o $(2))
+ 
+ #######################################################################
+ # Add handler for arbitrary files in CBFS
+ $(call add-special-class,cbfs-files)
+ cbfs-files-handler= \
+ 		$(eval tmp-cbfs-method:=$(word 2, $(subst :, ,$($(2)-file)))) \
+ 		$(eval $(2)-file:=$(word 1, $(subst :, ,$($(2)-file)))) \
+ 		$(if $(wildcard $(1)$($(2)-file)), \
+ 			$(eval tmp-cbfs-file:= $(wildcard $(1)$($(2)-file))), \
+ 			$(eval tmp-cbfs-file:= $($(2)-file))) \
+ 		$(if $(tmp-cbfs-method), \
+ 			$(eval tmp-old-cbfs-file:=$(tmp-cbfs-file)) \
+ 			$(eval tmp-cbfs-file:=$(shell mktemp $(obj)/mainboard/$(MAINBOARDDIR)/cbfs-file.XXXXXX).out) \
+ 			$(call cbfs-files-processor-$(tmp-cbfs-method),$(tmp-old-cbfs-file),$(tmp-cbfs-file))) \
+ 		$(eval cbfs-files += $(tmp-cbfs-file)|$(2)|$($(2)-type)|$($(2)-compression)|$($(2)-position)) \
+ 		$(eval $(2)-name:=) \
+ 		$(eval $(2)-type:=) \
+ 		$(eval $(2)-compression:=) \
+ 		$(eval $(2)-position:=)
+ 
+ #######################################################################
+ # a variety of flags for our build
+ CBFS_COMPRESS_FLAG:=
+ ifeq ($(CONFIG_COMPRESS_RAMSTAGE),y)
+ CBFS_COMPRESS_FLAG:=l
+ endif
+ 
+ CBFS_PAYLOAD_COMPRESS_FLAG:=
+ CBFS_PAYLOAD_COMPRESS_NAME:=none
+ ifeq ($(CONFIG_COMPRESSED_PAYLOAD_LZMA),y)
+ CBFS_PAYLOAD_COMPRESS_FLAG:=l
+ CBFS_PAYLOAD_COMPRESS_NAME:=LZMA
+ endif
+ 
+ ifneq ($(CONFIG_LOCALVERSION),"")
+ COREBOOT_EXTRA_VERSION := -$(call strip_quotes,$(CONFIG_LOCALVERSION))
+ endif
+ 
+ INCLUDES := -Isrc -Isrc/include -I$(obj) -Isrc/arch/$(ARCHDIR-y)/include
+ INCLUDES += -Isrc/devices/oprom/include
+ # abspath is a workaround for romcc
+ INCLUDES += -include $(src)/include/kconfig.h
+ 
+ CFLAGS = $(INCLUDES) -Os -pipe -g -nostdinc
+ CFLAGS += -nostdlib -Wall -Wundef -Wstrict-prototypes -Wmissing-prototypes
+ CFLAGS += -Wwrite-strings -Wredundant-decls -Wno-trigraphs
+ CFLAGS += -Wstrict-aliasing -Wshadow
+ ifeq ($(CONFIG_WARNINGS_ARE_ERRORS),y)
+ CFLAGS += -Werror
+ endif
+ CFLAGS += -fno-common -ffreestanding -fno-builtin -fomit-frame-pointer
+ 
+ additional-dirs := $(objutil)/cbfstool $(objutil)/romcc $(objutil)/options
+ 
+ #######################################################################
+ # generate build support files
+ $(obj)/build.h: .xcompile
+ 	@printf "    GEN        build.h\n"
+ 	rm -f $(obj)/build.h
+ 	printf "/* build system definitions (autogenerated) */\n" > $(obj)/build.ht
+ 	printf "#ifndef __BUILD_H\n" >> $(obj)/build.ht
+ 	printf "#define __BUILD_H\n\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_VERSION \"$(KERNELVERSION)\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_EXTRA_VERSION \"$(COREBOOT_EXTRA_VERSION)\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_BUILD \"`LANG= date`\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_DMI_DATE \"`LANG= date +"%m/%d/%Y"`\"\n" >> $(obj)/build.ht
+ 	printf "\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_COMPILER \"$(shell LANG= $(CC) --version | head -n1)\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_ASSEMBLER \"$(shell LANG= $(AS) --version | head -n1)\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_LINKER \"$(shell LANG= $(LD) --version | head -n1)\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_COMPILE_TIME \"`LANG= date +%T`\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_COMPILE_BY \"$(subst \,@,$(shell PATH=$$PATH:/usr/ucb whoami))\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_COMPILE_HOST \"$(shell hostname -s 2>/dev/null)\"\n" >> $(obj)/build.ht
+ 	printf "#define COREBOOT_COMPILE_DOMAIN \"$(shell test `uname -s` = "Linux" && dnsdomainname || domainname 2>/dev/null)\"\n" >> $(obj)/build.ht
+ 	printf "#endif\n" >> $(obj)/build.ht
+ 	mv $(obj)/build.ht $(obj)/build.h
+ 
+ $(obj)/ldoptions: $(obj)/config.h
+ 	awk '/^#define ([^"])* ([^"])*$$/ {gsub("\\r","",$$3); print $$2 " = " $$3 ";";}' $< > $@
+ 
+ build-dirs:
+ 	mkdir -p $(objcbfs) $(objgenerated)
+ 
+ #######################################################################
+ # Build the tools
+ CBFSTOOL:=$(obj)/cbfstool
+ 
+ $(CBFSTOOL): $(objutil)/cbfstool/cbfstool
+ 	cp $< $@
+ 
+ _WINCHECK=$(shell uname -o 2> /dev/null)
+ STACK=
+ ifeq ($(_WINCHECK),Msys)
+ 	STACK=-Wl,--stack,16384000
+ endif
+ ifeq ($(_WINCHECK),Cygwin)
+ 	STACK=-Wl,--stack,16384000
+ endif
+ 
+ ROMCC:= $(objutil)/romcc/romcc
+ $(ROMCC): $(top)/util/romcc/romcc.c
+ 	@printf "    HOSTCC     $(subst $(obj)/,,$(@)) (this may take a while)\n"
+ 	@# Note: Adding -O2 here might cause problems. For details see:
+ 	@# http://www.coreboot.org/pipermail/coreboot/2010-February/055825.html
+ 	$(HOSTCC) -g $(STACK) -Wall -o $@ $<
+ 
+ #######################################################################
+ # needed objects that every mainboard uses
+ # Creation of these is architecture and mainboard independent
+ $(obj)/mainboard/$(MAINBOARDDIR)/static.c: $(src)/mainboard/$(MAINBOARDDIR)/devicetree.cb  $(objutil)/sconfig/sconfig
+ 	@printf "    SCONFIG    $(subst $(src)/,,$(<))\n"
+ 	mkdir -p $(obj)/mainboard/$(MAINBOARDDIR)
+ 	$(objutil)/sconfig/sconfig $(MAINBOARDDIR) $(obj)/mainboard/$(MAINBOARDDIR)
+ 
+ ramstage-y+=$(obj)/mainboard/$(MAINBOARDDIR)/static.c
+ romstage-y+=$(obj)/mainboard/$(MAINBOARDDIR)/static.c
+ 
+ $(objutil)/%.o: $(objutil)/%.c
+ 	@printf "    HOSTCC     $(subst $(objutil)/,,$(@))\n"
+ 	$(HOSTCC) -MMD -I$(subst $(objutil)/,util/,$(dir $<)) -I$(dir $<) $(HOSTCFLAGS) -c -o $@ $<
+ 
+ $(obj)/%.ramstage.o $(abspath $(obj))/%.ramstage.o: $(obj)/%.c $(obj)/config.h $(OPTION_TABLE_H)
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ 	$(CC) -MMD $(CFLAGS) -c -o $@ $<
+ 
+ $(obj)/%.romstage.o $(abspath $(obj))/%.romstage.o: $(obj)/%.c $(obj)/config.h $(OPTION_TABLE_H)
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ 	$(CC) -MMD -D__PRE_RAM__ $(CFLAGS) -c -o $@ $<
+ 
+ #######################################################################
+ # Clean up rules
+ clean-abuild:
+ 	rm -rf coreboot-builds
+ 
+ clean-for-update-target:
+ 	rm -f $(obj)/coreboot_ram* $(obj)/coreboot.romstage $(obj)/coreboot.pre* $(obj)/coreboot.bootblock $(obj)/coreboot.a
+ 	rm -rf $(obj)/bootblock* $(obj)/romstage* $(obj)/location.*
+ 	rm -f $(obj)/option_table.* $(obj)/crt0.S $(obj)/ldscript
+ 	rm -f $(obj)/mainboard/$(MAINBOARDDIR)/static.c $(obj)/mainboard/$(MAINBOARDDIR)/config.py $(obj)/mainboard/$(MAINBOARDDIR)/static.dot
+ 	rm -f $(obj)/mainboard/$(MAINBOARDDIR)/crt0.s $(obj)/mainboard/$(MAINBOARDDIR)/crt0.disasm
+ 	rm -f $(obj)/mainboard/$(MAINBOARDDIR)/romstage.inc
+ 	rm -f $(obj)/mainboard/$(MAINBOARDDIR)/bootblock.* $(obj)/mainboard/$(MAINBOARDDIR)/dsdt.*
+ 	rm -f $(obj)/cpu/x86/smm/smm_bin.c $(obj)/cpu/x86/smm/smm.* $(obj)/cpu/x86/smm/smm
+ 	$(MAKE) -C payloads/external/SeaBIOS -f Makefile.inc clean OUT=$(abspath $(obj)) HOSTCC="$(HOSTCC)" CC="$(CC)" LD="$(LD)"
+ 
+ clean-target:
+ 	rm -f $(obj)/coreboot*
+ 
+ #######################################################################
+ # Development utilities
+ printcrt0s:
+ 	@echo crt0s=$(crt0s)
+ 	@echo ldscripts=$(ldscripts)
+ 
+ update:
+ 	dongle.py -c /dev/term/1 $(obj)/coreboot.rom EOF
+ 
+ lint lint-stable:
+ 	FAILED=0; LINTLOG=`mktemp`; \
+ 	for script in util/lint/$@-*; do \
+ 		echo; echo `basename $$script`; \
+ 		grep "^# DESCR:" $$script | sed "s,.*DESCR: *,," ; \
+ 		echo ========; \
+ 		$$script > $$LINTLOG; \
+ 		if [ `cat $$LINTLOG | wc -l` -eq 0 ]; then \
+ 			printf "success\n\n"; \
+ 		else \
+ 			echo test failed: ; \
+ 			cat $$LINTLOG; \
+ 			rm -f $$LINTLOG; \
+ 			FAILED=$$(( $$FAILED + 1 )); \
+ 		fi; \
+ 		echo ========; \
+ 	done; \
+ 	test $$FAILED -eq 0 || { echo "ERROR: $$FAILED test(s) failed." &&  exit 1; }; \
+ 	rm -f $$LINTLOG
+ 
+ gitconfig:
+ 	for hook in commit-msg pre-commit ; do                       \
+ 		if [ util/gitconfig/$$hook -nt .git/hooks/$$hook -o  \
+ 		! -x .git/hooks/$$hook ]; then			     \
+ 			cp util/gitconfig/$$hook .git/hooks/$$hook;  \
+ 			chmod +x .git/hooks/$$hook;		     \
+ 		fi;						     \
+ 	done
+ 	(git config --global user.name >/dev/null && git config --global user.email >/dev/null) || (printf 'Please configure your name and email in git:\n\n git config --global user.name "Your Name Comes Here"\n git config --global user.email your.email@example.com\n'; exit 1)
+ 
+ crossgcc: clean-for-update
+ 	$(MAKE) -C util/crossgcc build-without-gdb
+ 
+ crosstools: clean-for-update
+ 	$(MAKE) -C util/crossgcc build
+ 
+ crossgcc-clean: clean-for-update
+ 	$(MAKE) -C util/crossgcc clean
+ 
+ tools: $(objutil)/kconfig/conf $(objutil)/cbfstool/cbfstool $(objutil)/nvramtool/nvramtool $(objutil)/romcc/romcc $(objutil)/sconfig/sconfig
+ 
+diff --git a/src/arch/x86/Makefile.inc b/src/arch/x86/Makefile.inc
+index 810e168895..c58f3be1b7 100644
+--- a/src/arch/x86/Makefile.inc
++++ b/src/arch/x86/Makefile.inc
+@@ -1,407 +1,403 @@
++################################################################################
+ ##
+ ## This file is part of the coreboot project.
+ ##
++## Copyright (C) 2012 Alexandru Gagniuc <mr.nuke.me@gmail.com>
+ ## Copyright (C) 2009-2010 coresystems GmbH
+ ## Copyright (C) 2009 Ronald G. Minnich
+ ##
+ ## This program is free software; you can redistribute it and/or modify
+ ## it under the terms of the GNU General Public License as published by
+ ## the Free Software Foundation; version 2 of the License.
+ ##
+ ## This program is distributed in the hope that it will be useful,
+ ## but WITHOUT ANY WARRANTY; without even the implied warranty of
+ ## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ ## GNU General Public License for more details.
+ ##
+ ## You should have received a copy of the GNU General Public License
+ ## along with this program; if not, write to the Free Software
+ ## Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+ ##
++################################################################################
+ 
+-#######################################################################
+ # Take care of subdirectories
+ subdirs-y += boot
+ # subdirs-y += init
+ subdirs-y += lib
+ subdirs-y += smp
+ 
+ OPTION_TABLE_H:=
+ ifeq ($(CONFIG_HAVE_OPTION_TABLE),y)
+ cbfs-files-y += cmos_layout.bin
+ cmos_layout.bin-file = $(obj)/cmos_layout.bin
+ cmos_layout.bin-type = 0x01aa
+ 
+ OPTION_TABLE_H:=$(obj)/option_table.h
+ endif
+ 
+-ifeq ($(CONFIG_MICROCODE_IN_CBFS),y)
+-cbfs-files-y += microcode_blob.bin
+-microcode_blob.bin-file = $(obj)/microcode_blob.bin
+-microcode_blob.bin-type = 0x53
+-endif
+-
+-#######################################################################
++################################################################################
+ # Build the final rom image
+ COREBOOT_ROM_DEPENDENCIES:=
+ ifeq ($(CONFIG_PAYLOAD_ELF),y)
+ COREBOOT_ROM_DEPENDENCIES+=$(CONFIG_PAYLOAD_FILE)
+ endif
+ ifeq ($(CONFIG_PAYLOAD_SEABIOS),y)
+ COREBOOT_ROM_DEPENDENCIES+=seabios
+ endif
+ ifeq ($(CONFIG_PAYLOAD_FILO),y)
+ COREBOOT_ROM_DEPENDENCIES+=filo
+ endif
+ ifeq ($(CONFIG_AP_CODE_IN_CAR),y)
+ COREBOOT_ROM_DEPENDENCIES+=$(objcbfs)/coreboot_ap.elf
+ endif
+ 
+ extract_nth=$(word $(1), $(subst |, ,$(2)))
+ 
+ ifneq ($(CONFIG_UPDATE_IMAGE),y)
+ prebuild-files = \
+ 	$(foreach file,$(cbfs-files), \
+ 	$(CBFSTOOL) $@.tmp \
+ 	add$(if $(filter stage,$(call extract_nth,3,$(file))),-stage)$(if $(filter payload,$(call extract_nth,3,$(file))),-payload) \
+ 	$(call extract_nth,1,$(file)) \
+ 	$(call extract_nth,2,$(file)) $(if $(filter-out stage payload,$(call extract_nth,3,$(file))),$(call extract_nth,3,$(file))) \
+ 	$(call extract_nth,4,$(file)) &&)
+ prebuilt-files = $(foreach file,$(cbfs-files), $(call extract_nth,1,$(file)))
+ 
+ $(obj)/coreboot.pre1: $(objcbfs)/bootblock.bin $$(prebuilt-files) $(CBFSTOOL)
+ 	$(CBFSTOOL) $@.tmp create $(CONFIG_COREBOOT_ROMSIZE_KB)K $(objcbfs)/bootblock.bin
+ 	$(prebuild-files) true
+ 	mv $@.tmp $@
+ else
+ .PHONY: $(obj)/coreboot.pre1
+ $(obj)/coreboot.pre1: $(CBFSTOOL)
+ 	mv $(obj)/coreboot.rom $@
+ endif
+ 
+ $(obj)/coreboot.rom: $(obj)/coreboot.pre $(objcbfs)/coreboot_ram.elf $(CBFSTOOL) $(call strip_quotes,$(COREBOOT_ROM_DEPENDENCIES))
+ 	@printf "    CBFS       $(subst $(obj)/,,$(@))\n"
+ 	cp $(obj)/coreboot.pre $@.tmp
+ 	if [ -f $(objcbfs)/coreboot_ap.elf ]; \
+ 	then \
+ 		$(CBFSTOOL) $@.tmp add-stage $(objcbfs)/coreboot_ap.elf $(CONFIG_CBFS_PREFIX)/coreboot_ap $(CBFS_COMPRESS_FLAG); \
+ 	fi
+ 	$(CBFSTOOL) $@.tmp add-stage $(objcbfs)/coreboot_ram.elf $(CONFIG_CBFS_PREFIX)/coreboot_ram $(CBFS_COMPRESS_FLAG)
+ ifeq ($(CONFIG_PAYLOAD_NONE),y)
+ 	@printf "    PAYLOAD    \e[1;31mnone (as specified by user)\e[0m\n"
+ endif
+ ifeq ($(CONFIG_PAYLOAD_ELF),y)
+ 	@printf "    PAYLOAD    $(CONFIG_PAYLOAD_FILE) (compression: $(CBFS_PAYLOAD_COMPRESS_NAME))\n"
+ 	$(CBFSTOOL) $@.tmp add-payload $(CONFIG_PAYLOAD_FILE) $(CONFIG_CBFS_PREFIX)/payload $(CBFS_PAYLOAD_COMPRESS_FLAG)
+ endif
+ ifeq ($(CONFIG_PAYLOAD_SEABIOS),y)
+ 	@printf "    PAYLOAD    SeaBIOS (internal, compression: $(CBFS_PAYLOAD_COMPRESS_NAME))\n"
+ 	$(CBFSTOOL) $@.tmp add-payload $(CONFIG_PAYLOAD_FILE) $(CONFIG_CBFS_PREFIX)/payload $(CBFS_PAYLOAD_COMPRESS_FLAG)
+ endif
+ ifeq ($(CONFIG_PAYLOAD_FILO),y)
+ 	@printf "    PAYLOAD    FILO (internal, compression: $(CBFS_PAYLOAD_COMPRESS_NAME))\n"
+ 	$(CBFSTOOL) $@.tmp add-payload $(CONFIG_PAYLOAD_FILE) $(CONFIG_CBFS_PREFIX)/payload $(CBFS_PAYLOAD_COMPRESS_FLAG)
+ endif
+ ifeq ($(CONFIG_INCLUDE_CONFIG_FILE),y)
+ 	@printf "    CONFIG     $(DOTCONFIG)\n"
+ 	if [ -f $(DOTCONFIG) ]; then \
+ 	echo "# This image was built using git revision" `git rev-parse HEAD` > $(obj)/config.tmp ; \
+ 	sed -e '/^#/d' -e '/^ *$$/d' $(DOTCONFIG) >> $(obj)/config.tmp ; \
+ 	$(CBFSTOOL) $@.tmp add $(obj)/config.tmp config raw; rm -f $(obj)/config.tmp ; fi
+ endif
+ 	mv $@.tmp $@
+ 	@printf "    CBFSPRINT  $(subst $(obj)/,,$(@))\n\n"
+ 	$(CBFSTOOL) $@ print
+ 
+ stripped_vgabios_id = $(call strip_quotes,$(CONFIG_VGA_BIOS_ID))
+ cbfs-files-$(CONFIG_VGA_BIOS) += pci$(stripped_vgabios_id).rom
+ pci$(stripped_vgabios_id).rom-file := $(call strip_quotes,$(CONFIG_VGA_BIOS_FILE))
+ pci$(stripped_vgabios_id).rom-type := optionrom
+ 
+ cbfs-files-$(CONFIG_INTEL_MBI) += mbi.bin
+ mbi.bin-file := $(call strip_quotes,$(CONFIG_MBI_FILE))
+ mbi.bin-type := mbi
+ 
+ cbfs-files-$(CONFIG_BOOTSPLASH) += bootsplash.jpg
+ bootsplash.jpg-file := $(call strip_quotes,$(CONFIG_BOOTSPLASH_FILE))
+ bootsplash.jpg-type := bootsplash
+ 
+-#######################################################################
++################################################################################
+ # i386 specific tools
+ NVRAMTOOL:=$(objutil)/nvramtool/nvramtool
+ 
+ $(OPTION_TABLE_H): $(NVRAMTOOL) $(top)/src/mainboard/$(MAINBOARDDIR)/cmos.layout
+ 	@printf "    OPTION     $(subst $(obj)/,,$(@))\n"
+ 	$(NVRAMTOOL) -y $(top)/src/mainboard/$(MAINBOARDDIR)/cmos.layout -H $@
+ 
+ $(obj)/cmos_layout.bin: $(NVRAMTOOL) $(top)/src/mainboard/$(MAINBOARDDIR)/cmos.layout
+ 	@printf "    OPTION     $(subst $(obj)/,,$(@))\n"
+ 	$(NVRAMTOOL) -y $(top)/src/mainboard/$(MAINBOARDDIR)/cmos.layout -L $@
+ 
+-#######################################################################
++################################################################################
+ # Common recipes for all stages
+ 
+ $(objcbfs)/%.bin: $(objcbfs)/%.elf
+ 	@printf "    OBJCOPY    $(subst $(obj)/,,$(@))\n"
+ 	$(OBJCOPY) -O binary $< $@
+ 
+ $(objcbfs)/%.elf: $(objcbfs)/%.debug
+ 	@printf "    OBJCOPY    $(subst $(obj)/,,$(@))\n"
+ 	cp $< $@.tmp
+ 	$(NM) -n $@.tmp | sort > $(basename $@).map
+ 	$(OBJCOPY) --strip-debug $@.tmp
+ 	$(OBJCOPY) --add-gnu-debuglink=$< $@.tmp
+ 	mv $@.tmp $@
+ 
+-#######################################################################
++################################################################################
+ # Build the coreboot_ram (stage 2)
+ 
+ $(objcbfs)/coreboot_ram.debug: $(objgenerated)/coreboot_ram.o $(src)/arch/x86/coreboot_ram.ld
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ ifeq ($(CONFIG_COMPILER_LLVM_CLANG),y)
+ 	$(LD) -m elf_i386 -o $@ -L$(obj) $< -T $(src)/arch/x86/coreboot_ram.ld
+ else
+ 	$(CC) -nostdlib -nostartfiles -static -o $@ -L$(obj) -T $(src)/arch/x86/coreboot_ram.ld $<
+ endif
+ 
+ $(objgenerated)/coreboot_ram.o: $(obj)/arch/x86/lib/c_start.ramstage.o $$(driver-objs) $(objgenerated)/ramstage.a $(LIBGCC_FILE_NAME)
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ ifeq ($(CONFIG_COMPILER_LLVM_CLANG),y)
+ 	$(LD) -m elf_i386 -r -o $@ $(obj)/arch/x86/lib/c_start.ramstage.o $(driver-objs) --wrap __divdi3 --wrap __udivdi3 --wrap __moddi3 --wrap __umoddi3 --start-group $(objgenerated)/ramstage.a $(LIBGCC_FILE_NAME) --end-group
+ else
+ 	$(CC) -nostdlib -r -o $@ $(obj)/arch/x86/lib/c_start.ramstage.o $(driver-objs) -Wl,--wrap,__divdi3 -Wl,--wrap,__udivdi3 -Wl,--wrap,__moddi3 -Wl,--wrap,__umoddi3 -Wl,--start-group $(objgenerated)/ramstage.a $(LIBGCC_FILE_NAME) -Wl,--end-group
+ endif
+ 
+ $(objgenerated)/ramstage.a: $$(ramstage-objs)
+ 	@printf "    AR         $(subst $(obj)/,,$(@))\n"
+ 	rm -f $@
+ 	$(AR) cr $@ $^
+ 
+-#######################################################################
++################################################################################
+ # Ramstage for AP CPU (AMD K8, obsolete?)
+ 
+ $(objcbfs)/coreboot_ap.debug: $(objgenerated)/coreboot_ap.o $(src)/arch/x86/init/ldscript_apc.lb
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ 	$(CC) -nostdlib -nostartfiles -static -o $@ -L$(obj) -T $(src)/arch/x86/init/ldscript_apc.lb $<
+ 
+ $(objgenerated)/coreboot_ap.o: $(src)/mainboard/$(MAINBOARDDIR)/ap_romstage.c $(OPTION_TABLE_H)
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ 	$(CC) -MMD $(CFLAGS) -I$(src) -D__PRE_RAM__ -I. -I$(obj) -c $< -o $@
+ 
+-#######################################################################
++################################################################################
+ # done
+ 
+ crt0s = $(src)/arch/x86/init/prologue.inc
+ ldscripts =
+ ldscripts += $(src)/arch/x86/init/romstage.ld
+ crt0s += $(src)/cpu/x86/32bit/entry32.inc
+ ldscripts += $(src)/cpu/x86/32bit/entry32.lds
+ 
+ crt0s += $(src)/cpu/x86/fpu_enable.inc
+ ifeq ($(CONFIG_SSE),y)
+ crt0s += $(src)/cpu/x86/sse_enable.inc
+ endif
+ 
+ crt0s += $(cpu_incs)
+ crt0s += $(cpu_incs-y)
+ 
+ ifeq ($(CONFIG_LLSHELL),y)
+ crt0s += $(src)/arch/x86/llshell/llshell.inc
+ endif
+ 
+ crt0s += $(obj)/mainboard/$(MAINBOARDDIR)/romstage.inc
+ 
+ ifeq ($(CONFIG_ROMCC),y)
+ crt0s += $(src)/arch/x86/init/crt0_romcc_epilogue.inc
+ endif
+ 
+ ifeq ($(CONFIG_ROMCC),y)
+ ROMCCFLAGS ?= -mcpu=p2 -O2
+ 
+ $(obj)/mainboard/$(MAINBOARDDIR)/romstage.inc: $(src)/mainboard/$(MAINBOARDDIR)/romstage.c $(objutil)/romcc/romcc $(OPTION_TABLE_H) $(obj)/build.h $(obj)/config.h
+ 	printf "    ROMCC      romstage.inc\n"
+ 	$(ROMCC) -c -S $(ROMCCFLAGS) -D__PRE_RAM__ -I. $(INCLUDES) $< -o $@
+ else
+ 
+ $(obj)/mainboard/$(MAINBOARDDIR)/romstage.pre.inc: $(src)/mainboard/$(MAINBOARDDIR)/romstage.c $(OPTION_TABLE_H) $(obj)/build.h $(obj)/config.h
+ 	@printf "    CC         romstage.inc\n"
+ 	$(CC) -MMD $(CFLAGS) -D__PRE_RAM__ -I$(src) -I. -I$(obj) -c -S $< -o $@
+ 
+ $(obj)/mainboard/$(MAINBOARDDIR)/romstage.inc: $(obj)/mainboard/$(MAINBOARDDIR)/romstage.pre.inc
+ 	@printf "    POST       romstage.inc\n"
+ 	sed -e 's/\.rodata/.rom.data/g' -e 's/\^\.text/.section .rom.text/g' \
+ 		-e 's/\^\.section \.text/.section .rom.text/g' $^ > $@.tmp
+ 	mv $@.tmp $@
+ endif
+ 
+ # Things that appear in every board
+ romstage-srcs += $(objgenerated)/crt0.s
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/mainboard.c
+ ifeq ($(CONFIG_GENERATE_MP_TABLE),y)
+ ifeq ($(CONFIG_HAVE_MP_TABLE),y)
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/mptable.c
+ endif
+ endif
+ ifeq ($(CONFIG_GENERATE_PIRQ_TABLE),y)
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/irq_tables.c
+ endif
+ ifeq ($(CONFIG_BOARD_HAS_HARD_RESET),y)
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/reset.c
+ endif
+ ifeq ($(CONFIG_GENERATE_ACPI_TABLES),y)
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/acpi_tables.c
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/dsdt.asl
+ # make doesn't have arithmetic operators or greater-than comparisons
+ ifeq ($(subst 5,4,$(CONFIG_ACPI_SSDTX_NUM)),4)
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/ssdt2.asl
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/ssdt3.asl
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/ssdt4.asl
+ endif
+ ifeq ($(CONFIG_ACPI_SSDTX_NUM),5)
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/ssdt5.asl
+ endif
+ ifeq ($(CONFIG_BOARD_HAS_FADT),y)
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/fadt.c
+ endif
+ endif
+ 
+ ifeq ($(CONFIG_HAVE_BUS_CONFIG),y)
+ ramstage-srcs += src/mainboard/$(MAINBOARDDIR)/get_bus_conf.c
+ endif
+ 
+-#######################################################################
++################################################################################
+ # Build the final rom image
+ 
+ $(obj)/coreboot.pre: $(objcbfs)/romstage_xip.elf $(obj)/coreboot.pre1 $(CBFSTOOL)
+ 	@printf "    CBFS       $(subst $(obj)/,,$(@))\n"
+ 	cp $(obj)/coreboot.pre1 $@.tmp
+ 	$(CBFSTOOL) $@.tmp add-stage $(objcbfs)/romstage_xip.elf \
+ 		$(CONFIG_CBFS_PREFIX)/romstage x $(shell cat $(objcbfs)/base_xip.txt)
+ 	mv $@.tmp $@
+ 
+-#######################################################################
++################################################################################
+ # Build the bootblock
+ 
+ bootblock_lds = $(src)/arch/x86/init/ldscript_failover.lb
+ bootblock_lds += $(src)/cpu/x86/16bit/entry16.lds
+ bootblock_lds += $(src)/cpu/x86/16bit/reset16.lds
+ bootblock_lds += $(src)/arch/x86/lib/id.lds
+ bootblock_lds += $(chipset_bootblock_lds)
+ 
+ bootblock_inc = $(src)/arch/x86/init/prologue.inc
+ bootblock_inc += $(src)/cpu/x86/16bit/entry16.inc
+ bootblock_inc += $(src)/cpu/x86/16bit/reset16.inc
+ bootblock_inc += $(src)/cpu/x86/32bit/entry32.inc
+ bootblock_inc += $(src)/arch/x86/lib/id.inc
+ bootblock_inc += $(chipset_bootblock_inc)
+ 
+ ifeq ($(CONFIG_SSE),y)
+ bootblock_inc += $(src)/cpu/x86/sse_enable.inc
+ endif
+ bootblock_inc += $(objgenerated)/bootblock.inc
+ bootblock_inc += $(src)/arch/x86/lib/walkcbfs.S
+ 
+ bootblock_romccflags := -mcpu=i386 -O2 -D__PRE_RAM__
+ ifeq ($(CONFIG_SSE),y)
+ bootblock_romccflags := -mcpu=k7 -msse -O2 -D__PRE_RAM__
+ endif
+ 
+ $(objgenerated)/bootblock.ld: $$(bootblock_lds) $(obj)/ldoptions
+ 	@printf "    GEN        $(subst $(obj)/,,$(@))\n"
+ 	printf '$(foreach ldscript,ldoptions $(bootblock_lds),INCLUDE "$(ldscript)"\n)' > $@
+ 
+ $(objgenerated)/bootblock_inc.S: $$(bootblock_inc)
+ 	@printf "    GEN        $(subst $(obj)/,,$(@))\n"
+ 	printf '$(foreach crt0,$(bootblock_inc),#include "$(crt0)"\n)' > $@
+ 
+ $(objgenerated)/bootblock.o: $(objgenerated)/bootblock.s
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ 	$(CC) -Wa,-acdlns -c -o $@ $<  > $(basename $@).disasm
+ 
+ $(objgenerated)/bootblock.s: $(objgenerated)/bootblock_inc.S $(obj)/config.h $(obj)/build.h
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ 	$(CC) -MMD -x assembler-with-cpp -E -I$(src)/include -I$(src)/arch/x86/include -I$(obj) -include $(obj)/build.h -include $(obj)/config.h -I. -I$(src) $< -o $@
+ 
+ $(objgenerated)/bootblock.inc: $(src)/arch/x86/init/$(subst ",,$(CONFIG_BOOTBLOCK_SOURCE)) $(objutil)/romcc/romcc $(OPTION_TABLE_H)
+ 	@printf "    ROMCC      $(subst $(obj)/,,$(@))\n"
+ 	$(CC) $(INCLUDES) -MM -MT$(objgenerated)/bootblock.inc \
+ 		$< > $(objgenerated)/bootblock.inc.d
+ 	$(ROMCC) -c -S $(bootblock_romccflags) $(ROMCCFLAGS) -I. $(INCLUDES) $< -o $@
+ 
+ $(objcbfs)/bootblock.debug: $(objgenerated)/bootblock.o $(objgenerated)/bootblock.ld
+ 	@printf "    LINK       $(subst $(obj)/,,$(@))\n"
+ ifeq ($(CONFIG_COMPILER_LLVM_CLANG),y)
+ 	$(LD) -m elf_i386 -static -o $@.tmp -L$(obj) $< -T $(objgenerated)/bootblock.ld
+ else
+ 	$(CC) -nostdlib -nostartfiles -static -o $@ -L$(obj) -T $(objgenerated)/bootblock.ld $<
+ endif
+ 
+-#######################################################################
++################################################################################
+ # Build the romstage
+ 
+ $(objcbfs)/romstage_null.debug: $$(romstage-objs) $(objgenerated)/romstage_null.ld
+ 	@printf "    LINK       $(subst $(obj)/,,$(@))\n"
+ ifeq ($(CONFIG_COMPILER_LLVM_CLANG),y)
+ 	$(LD) -nostdlib -nostartfiles -static -o $@ -L$(obj) $(romstage-objs) -T $(objgenerated)/romstage_null.ld
+ else
+ 	$(CC) -nostdlib -nostartfiles -static -o $@ -L$(obj) -T $(objgenerated)/romstage_null.ld $(romstage-objs)
+ endif
+ 
+ $(objcbfs)/romstage_xip.debug: $$(romstage-objs) $(objgenerated)/romstage_xip.ld
+ 	@printf "    LINK       $(subst $(obj)/,,$(@))\n"
+ ifeq ($(CONFIG_COMPILER_LLVM_CLANG),y)
+ 	$(LD) -nostdlib -nostartfiles -static -o $@ -L$(obj) $(romstage-objs) -T $(objgenerated)/romstage_xip.ld
+ else
+ 	$(CC) -nostdlib -nostartfiles -static -o $@ -L$(obj) -T $(objgenerated)/romstage_xip.ld $(romstage-objs)
+ endif
+ 
+ $(objgenerated)/romstage_null.ld: $$(ldscripts) $(obj)/ldoptions
+ 	@printf "    GEN        $(subst $(obj)/,,$(@))\n"
+ 	rm -f $@
+ 	printf "ROMSTAGE_BASE = 0x0;\n" > $@.tmp
+ 	printf '$(foreach ldscript,ldoptions $(ldscripts),INCLUDE "$(ldscript:$(obj)/%=%)"\n)' >> $@.tmp
+ 	mv $@.tmp $@
+ 
+ $(objgenerated)/romstage_xip.ld: $(objgenerated)/romstage_null.ld $(objcbfs)/base_xip.txt
+ 	@printf "    GEN        $(subst $(obj)/,,$(@))\n"
+ 	rm -f $@
+ 	sed -e 's/^/ROMSTAGE_BASE = /g' -e 's/$$/;/g' $(objcbfs)/base_xip.txt > $@.tmp
+ 	sed -e '/ROMSTAGE_BASE/d' $(objgenerated)/romstage_null.ld >> $@.tmp
+ 	mv $@.tmp $@
+ 
+ $(objcbfs)/base_xip.txt: $(obj)/coreboot.pre1 $(objcbfs)/romstage_null.bin
+ 	rm -f $@
+ 	$(CBFSTOOL) $(obj)/coreboot.pre1 locate $(objcbfs)/romstage_null.bin $(CONFIG_CBFS_PREFIX)/romstage $(CONFIG_XIP_ROM_SIZE) > $@.tmp \
+ 	 || { echo "The romstage is larger than XIP size. Please expand the CONFIG_XIP_ROM_SIZE" ; exit 1; }
+ 	sed -e 's/^/0x/g' $@.tmp > $@.tmp2
+ 	rm $@.tmp
+ 	mv $@.tmp2 $@
+ 
+ $(objgenerated)/crt0.romstage.S: $$(crt0s)
+ 	@printf "    GEN        $(subst $(obj)/,,$(@))\n"
+ 	printf '$(foreach crt0,$(crt0s),#include "$(crt0:$(obj)/%=%)"\n)' > $@
+ 
+ $(objgenerated)/crt0.romstage.o: $(objgenerated)/crt0.s
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ 	$(CC) -Wa,-acdlns -c -o $@ $<  > $(basename $@).disasm
+ 
+ $(objgenerated)/crt0.s: $(objgenerated)/crt0.romstage.S $(obj)/config.h $(obj)/build.h
+ 	@printf "    CC         $(subst $(obj)/,,$(@))\n"
+ 	$(CC) -MMD -x assembler-with-cpp -E -I$(src)/include -I$(src)/arch/x86/include -I$(obj) -include $(obj)/config.h -include $(obj)/build.h -I. -I$(src) $< -o $@
+ 
+ seabios:
+ 	$(MAKE) -C payloads/external/SeaBIOS -f Makefile.inc \
+ 			HOSTCC="$(HOSTCC)" \
+ 			CC="$(CC)" LD="$(LD)" OBJDUMP="$(OBJDUMP)" \
+ 			OBJCOPY="$(OBJCOPY)" STRIP="$(STRIP)" \
+ 			CONFIG_SEABIOS_MASTER=$(CONFIG_SEABIOS_MASTER) \
+ 			CONFIG_SEABIOS_STABLE=$(CONFIG_SEABIOS_STABLE) \
+ 			OUT=$(abspath $(obj)) IASL="$(IASL)"
+ 
+ filo:
+ 	$(MAKE) -C payloads/external/FILO -f Makefile.inc \
+ 			HOSTCC="$(HOSTCC)" \
+ 			CC="$(CC)" LD="$(LD)" OBJDUMP="$(OBJDUMP)" \
+ 			OBJCOPY="$(OBJCOPY)" STRIP="$(STRIP)" \
+ 			CONFIG_FILO_MASTER=$(CONFIG_FILO_MASTER) \
+ 			CONFIG_FILO_STABLE=$(CONFIG_FILO_STABLE)
+ 
+diff --git a/src/cpu/Kconfig b/src/cpu/Kconfig
+index baf686ea75..1ed721f7e0 100644
+--- a/src/cpu/Kconfig
++++ b/src/cpu/Kconfig
+@@ -1,71 +1,151 @@
+ if ARCH_X86
+ 
+ source src/cpu/amd/Kconfig
+ source src/cpu/intel/Kconfig
+ source src/cpu/via/Kconfig
+ source src/cpu/x86/Kconfig
+ 
+ config CACHE_AS_RAM
+ 	bool
+ 	default !ROMCC
+ 
+ config DCACHE_RAM_BASE
+ 	hex
+ 
+ config DCACHE_RAM_SIZE
+ 	hex
+ 
+ config DCACHE_RAM_GLOBAL_VAR_SIZE
+ 	hex
+ 	default 0x0
+ 
+ # FIXME MAX_PHYSICAL_CPUS should move to AMD specific code, or better
+ # yet be dropped completely.
+ config MAX_PHYSICAL_CPUS
+ 	int
+ 	depends on CPU_AMD_MODEL_10XXX || CPU_AMD_MODEL_FXX || CPU_AMD_AGESA
+ 	default 1
+ 
+ config SMP
+ 	bool
+ 	default y if MAX_CPUS != 1
+ 	default n
+ 	help
+ 	  This option is used to enable certain functions to make coreboot
+ 	  work correctly on symmetric multi processor (SMP) systems.
+ 
+ config AP_SIPI_VECTOR
+ 	hex
+ 	default 0xfffff000
+ 	help
+ 	  This must equal address of ap_sipi_vector from bootblock build.
+ 
+ config	MMX
+ 	bool
+ 	help
+ 	  Select MMX in your socket or model Kconfig if your CPU has MMX
+ 	  streaming SIMD instructions. ROMCC can build more efficient
+ 	  code if it can spill to MMX registers.
+ 
+ config SSE
+ 	bool
+ 	help
+ 	  Select SSE in your socket or model Kconfig if your CPU has SSE
+ 	  streaming SIMD instructions. ROMCC can build more efficient
+ 	  code if it can spill to SSE (aka XMM) registers.
+ 
+ config SSE2
+ 	bool
+ 	default n
+ 	help
+ 	  Select SSE2 in your socket or model Kconfig if your CPU has SSE2
+ 	  streaming SIMD instructions. Some parts of coreboot can be built
+ 	  with more efficient code if SSE2 instructions are available.
+ 
+-config MICROCODE_IN_CBFS
+-	bool "Look for microcode in CBFS"
++endif # ARCH_X86
++
++config CPU_MICROCODE_IN_CBFS
++	bool
+ 	default n
++
++choice
++	prompt "Include CPU microcode in CBFS"
++	default CPU_MICROCODE_CBFS_GENERATE if CPU_MICROCODE_IN_CBFS
++	default CPU_MICROCODE_CBFS_NONE if !CPU_MICROCODE_IN_CBFS
++
++config CPU_MICROCODE_CBFS_GENERATE
++	bool "Generate from tree"
+ 	help
+-	  Load microcode updates from CBFS instead of compiling them in.
++	  Select this option if you want microcode updates to be assembled when
++	  building coreboot and included in the final image as a separate CBFS
++	  file. Microcode will not be hard-coded into ramstage.
+ 
+-endif # ARCH_X86
++	  The microcode file and may be removed from the ROM image at a later
++	  time with cbfstool, if desired.
++
++	  If unsure, select this option.
++
++config CPU_MICROCODE_CBFS_EXTERNAL
++	bool "Include external microcode file"
++	help
++	  Select this option if you want to include an external file containing
++	  the CPU microcode. This will be included as a separate file in CBFS.
++	  A word of caution: only select this option if you are sure the
++	  microcode that you have is newer than the microcode shipping with
++	  coreboot.
++
++	  The microcode file and may be removed from the ROM image at a later
++	  time with cbfstool, if desired.
++
++	  If unsure, select "Generate from tree"
++
++config CPU_MICROCODE_FILE
++	  string "Path and filename of CPU microcode"
++	  depends on CPU_MICROCODE_CBFS_EXTERNAL
++	  default "cpu_microcode.bin"
++	  help
++	    The path and filename of the file containing the CPU microcode.
++
++config CPU_MICROCODE_CBFS_NONE
++	bool "Do not include microcode updates"
++	help
++	  Select this option if you do not want CPU microcode included in CBFS.
++	  Note that for some CPUs, the microcode is hard-coded into the source
++	  tree and is not loaded from CBFS. In this case, microcode will still
++	  be updated. There is a push to move all microcode to CBFS, but this
++	  change is not implemented for all CPUs.
++
++	  This option currently applies to:
++	    - Intel SandyBridge/IvyBridge
++	    - VIA Nano
++
++	  Microcode may be added to the ROM image at a later time with cbfstool,
++	  if desired.
++
++	  If unsure, select "Generate from tree"
++
++	  The GOOD:
++	  Microcode updates intend to solve issues that have been discovered
++	  after CPU production. The expected effect is that systems work as
++	  intended with the updated microcode, but we have also seen cases where
++	  issues were solved by not applying microcode updates.
++
++	  The BAD:
++	  Note that some operating system include these same microcode patches,
++	  so you may need to also disable microcode updates in your operating
++	  system for this option to have an effect.
++
++	  The UGLY:
++	  A word of CAUTION: some CPUs depend on microcode updates to function
++	  correctly. Not updating the microcode may leave the CPU operating at
++	  less than optimal performance, or may cause outright hangups.
++	  There are CPUs where coreboot cannot properly initialize the CPU
++	  without microcode updates
++	  For example, if running with the factory microcode, some Intel
++	  SandyBridge CPUs may hang when enabling CAR, or some VIA Nano CPUs
++	  will hang when changing the frequency.
++
++	  Make sure you have a way of flashing the ROM externally before
++	  selecting this option.
++
++endchoice
+diff --git a/src/cpu/Makefile.inc b/src/cpu/Makefile.inc
+index 57273cf8c3..938a8dfef1 100644
+--- a/src/cpu/Makefile.inc
++++ b/src/cpu/Makefile.inc
+@@ -1,3 +1,40 @@
++################################################################################
++## Subdirectories
++################################################################################
+ subdirs-y += amd
+ subdirs-y += intel
+ subdirs-y += via
++
++################################################################################
++## Rules for building the microcode blob in CBFS
++################################################################################
++
++ifneq ($(CONFIG_CPU_MICROCODE_CBFS_NONE), y)
++
++cbfs-files-y += cpu_microcode_blob.bin
++
++cpu_microcode_blob.bin-type = 0x53
++
++# External microcode file, or are we generating one ?
++ifeq ($(CONFIG_CPU_MICROCODE_CBFS_EXTERNAL), y)
++cpu_microcode_blob.bin-file = $(call strip_quotes,$(CONFIG_CPU_MICROCODE_FILE))
++else
++cpu_microcode_blob.bin-file = $(obj)/cpu_microcode_blob.bin
++endif
++
++# In case we have more than one "source" (cough) files containing microcode, we
++# Link them together in one large blob, so that we get all the microcode updates
++# in one file. This makes it easier for objcopy in the final step.
++# The --entry=0 is just here to suppress the LD warning. It does not affect the
++# final microcode file.
++$(obj)/cpu_microcode_blob.o: $$(cpu_microcode-objs)
++	@printf "    LD         $(subst $(obj)/,,$(@))\n"
++	$(LD) -static --entry=0 $< -o $@
++
++# We have a lot of useless data in the large blob, and we are only interested in
++# the data section, so we only copy that part to the final microcode file
++$(obj)/cpu_microcode_blob.bin: $(obj)/cpu_microcode_blob.o
++	@printf "  MICROCODE    $(subst $(obj)/,,$(@))\n"
++	$(OBJCOPY) -j .data -O binary $< $@
++
++endif
+diff --git a/src/cpu/intel/microcode/Makefile.inc b/src/cpu/intel/microcode/Makefile.inc
+index f4d01020d1..22655c9532 100644
+--- a/src/cpu/intel/microcode/Makefile.inc
++++ b/src/cpu/intel/microcode/Makefile.inc
+@@ -1,15 +1,5 @@
+-ramstage-y += microcode.c
+-
+-
+-ifeq ($(CONFIG_MICROCODE_IN_CBFS),y)
+-
+-SRC_PATH = src/cpu/intel/microcode
+-FLAGS = -I $(CONFIG_MICROCODE_INCLUDE_PATH) -include $(obj)/config.h
+-$(obj)/microcode_blob.o: $(SRC_PATH)/microcode_blob.c
+-	$(CC) $(FLAGS) -MMD -c -o $@ $<
+-
+-$(obj)/microcode_blob.bin: $(obj)/microcode_blob.o
+-	objcopy -j .data -O binary $< $@
+-
+--include $(obj)/microcode_blob.d
+-endif
++################################################################################
++## One small file with the awesome super-power of updating the cpu microcode
++## directly from CBFS. You have been WARNED!!!
++################################################################################
++ramstage-y += microcode.c
+\ No newline at end of file
+diff --git a/src/cpu/intel/microcode/microcode.c b/src/cpu/intel/microcode/microcode.c
+index e84bad9beb..a4471ca042 100644
+--- a/src/cpu/intel/microcode/microcode.c
++++ b/src/cpu/intel/microcode/microcode.c
+@@ -1,163 +1,163 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 The ChromiumOS Authors.  All rights reserved.
+  * Copyright (C) 2000 Ronald G. Minnich
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ /* Microcode update for Intel PIII and later CPUs */
+ 
+ #include <stdint.h>
+ #if !defined(__ROMCC__)
+ #include <console/console.h>
+ #endif
+ #include <cpu/cpu.h>
+ #include <cpu/x86/msr.h>
+ #include <cpu/intel/microcode.h>
+ 
+-#if CONFIG_MICROCODE_IN_CBFS
++#if CONFIG_CPU_MICROCODE_IN_CBFS
+ #ifdef __PRE_RAM__
+ #include <arch/cbfs.h>
+ #else
+ #include <cbfs.h>
+ #endif
+ #endif
+ 
+ struct microcode {
+ 	u32 hdrver;	/* Header Version */
+ 	u32 rev;	/* Update Revision */
+ 	u32 date;	/* Date */
+ 	u32 sig;	/* Processor Signature */
+ 
+ 	u32 cksum;	/* Checksum */
+ 	u32 ldrver;	/* Loader Revision */
+ 	u32 pf;		/* Processor Flags */
+ 
+ 	u32 data_size;	/* Data Size */
+ 	u32 total_size;	/* Total Size */
+ 
+ 	u32 reserved[3];
+ };
+ 
+ static inline u32 read_microcode_rev(void)
+ {
+ 	/* Some Intel CPUs can be very finicky about the
+ 	 * CPUID sequence used.  So this is implemented in
+ 	 * assembly so that it works reliably.
+ 	 */
+ 	msr_t msr;
+ 	asm volatile (
+ 		"xorl %%eax, %%eax\n\t"
+ 		"xorl %%edx, %%edx\n\t"
+ 		"movl $0x8b, %%ecx\n\t"
+ 		"wrmsr\n\t"
+ 		"movl $0x01, %%eax\n\t"
+ 		"cpuid\n\t"
+ 		"movl $0x08b, %%ecx\n\t"
+ 		"rdmsr \n\t"
+ 		: /* outputs */
+ 		"=a" (msr.lo), "=d" (msr.hi)
+ 		: /* inputs */
+ 		: /* trashed */
+ 		 "ebx", "ecx"
+ 	);
+ 	return msr.hi;
+ }
+ 
+-#if CONFIG_MICROCODE_IN_CBFS
++#if CONFIG_CPU_MICROCODE_IN_CBFS
+ static
+ #endif
+ void intel_update_microcode(const void *microcode_updates)
+ {
+ 	u32 eax;
+ 	u32 pf, rev, sig;
+ 	unsigned int x86_model, x86_family;
+ 	const struct microcode *m;
+ 	const char *c;
+ 	msr_t msr;
+ 
+ 	/* CPUID sets MSR 0x8B iff a microcode update has been loaded. */
+ 	msr.lo = 0;
+ 	msr.hi = 0;
+ 	wrmsr(0x8B, msr);
+ 	eax = cpuid_eax(1);
+ 	msr = rdmsr(0x8B);
+ 	rev = msr.hi;
+ 	x86_model = (eax >>4) & 0x0f;
+ 	x86_family = (eax >>8) & 0x0f;
+ 	sig = eax;
+ 
+ 	pf = 0;
+ 	if ((x86_model >= 5)||(x86_family>6)) {
+ 		msr = rdmsr(0x17);
+ 		pf = 1 << ((msr.hi >> 18) & 7);
+ 	}
+ #if !defined(__ROMCC__)
+ 	/* If this code is compiled with ROMCC we're probably in
+ 	 * the bootblock and don't have console output yet.
+ 	 */
+ 	printk(BIOS_DEBUG, "microcode: sig=0x%x pf=0x%x revision=0x%x\n",
+ 			sig, pf, rev);
+ #endif
+ 
+ 	m = microcode_updates;
+ 	for(c = microcode_updates; m->hdrver; m = (const struct microcode *)c) {
+ 		if ((m->sig == sig) && (m->pf & pf)) {
+ 			unsigned int new_rev;
+ 			msr.lo = (unsigned long)c + sizeof(struct microcode);
+ 			msr.hi = 0;
+ 			wrmsr(0x79, msr);
+ 
+ 			/* Read back the new microcode version */
+ 			new_rev = read_microcode_rev();
+ 
+ #if !defined(__ROMCC__)
+ 			printk(BIOS_DEBUG, "microcode: updated to revision "
+ 				    "0x%x date=%04x-%02x-%02x\n", new_rev,
+ 				    m->date & 0xffff, (m->date >> 24) & 0xff,
+ 				    (m->date >> 16) & 0xff);
+ #endif
+ 			break;
+ 		}
+ 
+ 		if (m->total_size) {
+ 			c += m->total_size;
+ 		} else {
+ #if !defined(__ROMCC__)
+ 			printk(BIOS_WARNING, "Microcode has no valid size field!\n");
+ #endif
+ 			c += 2048;
+ 		}
+ 	}
+ }
+ 
+-#if CONFIG_MICROCODE_IN_CBFS
++#if CONFIG_CPU_MICROCODE_IN_CBFS
+ 
+-#define MICROCODE_CBFS_FILE "microcode_blob.bin"
++#define MICROCODE_CBFS_FILE "cpu_microcode_blob.bin"
+ 
+ void intel_update_microcode_from_cbfs(void)
+ {
+ 	void *microcode_blob;
+ 
+ #ifdef __PRE_RAM__
+ 	microcode_blob = walkcbfs((char *) MICROCODE_CBFS_FILE);
+ #else
+ 	microcode_blob = cbfs_find_file(MICROCODE_CBFS_FILE,
+ 					CBFS_TYPE_MICROCODE);
+ #endif
+ 	intel_update_microcode(microcode_blob);
+ }
+ #endif
+diff --git a/src/cpu/intel/microcode/microcode_blob.c b/src/cpu/intel/microcode/microcode_blob.c
+deleted file mode 100644
+index 69238a9f77..0000000000
+--- a/src/cpu/intel/microcode/microcode_blob.c
++++ /dev/null
+@@ -1,22 +0,0 @@
+-/*
+- * This file is part of the coreboot project.
+- *
+- * Copyright (C) 2012 The ChromiumOS Authors.  All rights reserved.
+- *
+- * This program is free software; you can redistribute it and/or modify
+- * it under the terms of the GNU General Public License as published by
+- * the Free Software Foundation; version 2 of the License.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+- */
+-
+-unsigned microcode[] = {
+-#include <microcode_blob.h>
+-};
+diff --git a/src/cpu/intel/model_206ax/Kconfig b/src/cpu/intel/model_206ax/Kconfig
+index 6635868453..5c543b88ba 100644
+--- a/src/cpu/intel/model_206ax/Kconfig
++++ b/src/cpu/intel/model_206ax/Kconfig
+@@ -1,34 +1,34 @@
+ config CPU_INTEL_MODEL_206AX
+ 	bool
+ 
+ config CPU_INTEL_MODEL_306AX
+ 	bool
+ 
+ if CPU_INTEL_MODEL_206AX || CPU_INTEL_MODEL_306AX
+ 
+ config CPU_SPECIFIC_OPTIONS
+ 	def_bool y
+ 	select SMP
+ 	select SSE2
+ 	select UDELAY_LAPIC
+ 	select SMM_TSEG
+-	select MICROCODE_IN_CBFS
++	select CPU_MICROCODE_IN_CBFS
+ 	#select AP_IN_SIPI_WAIT
+ 	select TSC_SYNC_MFENCE
+ 
+ config BOOTBLOCK_CPU_INIT
+ 	string
+ 	default "cpu/intel/model_206ax/bootblock.c"
+ 
+ config SERIAL_CPU_INIT
+ 	bool
+ 	default n
+ 
+ config SMM_TSEG_SIZE
+ 	hex
+ 	default 0x800000
+ 
+ config MICROCODE_INCLUDE_PATH
+ 	string
+ 	default "src/cpu/intel/model_206ax"
+ endif
+diff --git a/src/cpu/intel/model_206ax/Makefile.inc b/src/cpu/intel/model_206ax/Makefile.inc
+index e9b8e6df8e..6ab4840c48 100644
+--- a/src/cpu/intel/model_206ax/Makefile.inc
++++ b/src/cpu/intel/model_206ax/Makefile.inc
+@@ -1,8 +1,10 @@
+ driver-y += model_206ax_init.c
+ subdirs-y += ../../x86/name
+ 
+ ramstage-$(CONFIG_GENERATE_ACPI_TABLES) += acpi.c
+ 
+ smm-$(CONFIG_HAVE_SMI_HANDLER) += finalize.c
+ 
++cpu_microcode-$(CONFIG_CPU_MICROCODE_CBFS_GENERATE)  += microcode_blob.c
++
+ cpu_incs += $(src)/cpu/intel/model_206ax/cache_as_ram.inc
+diff --git a/src/cpu/intel/model_206ax/microcode_blob.c b/src/cpu/intel/model_206ax/microcode_blob.c
+new file mode 100644
+index 0000000000..c2538e8ede
+--- /dev/null
++++ b/src/cpu/intel/model_206ax/microcode_blob.c
+@@ -0,0 +1,22 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2012 The ChromiumOS Authors.  All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++unsigned microcode[] = {
++#include "microcode_blob.h"
++};
+diff --git a/src/include/cpu/intel/microcode.h b/src/include/cpu/intel/microcode.h
+index 289e9196fa..e9c13f978c 100644
+--- a/src/include/cpu/intel/microcode.h
++++ b/src/include/cpu/intel/microcode.h
+@@ -1,31 +1,31 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 The ChromiumOS Authors.  All rights reserved.
+  * Copyright (C) 2000 Ronald G. Minnich
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ #ifndef __CPU__INTEL__MICROCODE__
+ #define __CPU__INTEL__MICROCODE__
+ 
+ #ifndef __PRE_RAM__
+-#if CONFIG_MICROCODE_IN_CBFS
++#if CONFIG_CPU_MICROCODE_IN_CBFS
+ void intel_update_microcode_from_cbfs(void);
+ #else
+ void intel_update_microcode(const void *microcode_updates);
+ #endif
+ #endif
+ 
+ #endif

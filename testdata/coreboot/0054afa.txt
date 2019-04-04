@@ -1,0 +1,233 @@
+commit 0054afa.txt
+Author: Stefan Reinauer <reinauer@chromium.org>
+Date:   Tue Oct 25 23:43:34 2011 +0000
+
+    Add faster, architecture dependent memcpy()
+    
+    Change-Id: I38d15f3f1ec65f0cb7974d2dd4ae6356433bddd8
+    Signed-off-by: Stefan Reinauer <reinauer@google.com>
+    Reviewed-by: Duncan Laurie <dlaurie@google.com>
+    Reviewed-on: http://review.coreboot.org/736
+    Reviewed-by: Ronald G. Minnich <rminnich@gmail.com>
+    Tested-by: build bot (Jenkins)
+
+diff --git a/src/arch/x86/Kconfig b/src/arch/x86/Kconfig
+index 314646fdb9..5ee7c4ac77 100644
+--- a/src/arch/x86/Kconfig
++++ b/src/arch/x86/Kconfig
+@@ -1,95 +1,99 @@
+ menu "Architecture (x86)"
+ 
+ # This is an SMP option. It relates to starting up APs.
+ # It is usually set in mainboard/*/Kconfig.
+ # TODO: Improve description.
+ config AP_IN_SIPI_WAIT
+ 	bool
+ 	default n
+ 	depends on ARCH_X86
+ 
+ config RAMBASE
+ 	hex
+ 	default 0x100000
+ 
+ config RAMTOP
+ 	hex
+ 	default 0x200000
+ 
+ config STACK_SIZE
+ 	hex
+ 	default 0x8000
+ 
+ # Maximum reboot count
+ # TODO: Improve description.
+ config MAX_REBOOT_CNT
+ 	int
+ 	default 3
+ 
+ # We had to rename the choice options under arch/ because otherwise
+ # the options would conflict between different architectures despite
+ # the if ARCH_xxx guarding the arch/xxx/Kconfig sourcing.
+ choice
+ 	prompt "Bootblock behaviour"
+ 	default X86_BOOTBLOCK_SIMPLE
+ 
+ config X86_BOOTBLOCK_SIMPLE
+ 	bool "Always load fallback"
+ 
+ config X86_BOOTBLOCK_NORMAL
+ 	bool "Switch to normal if CMOS says so"
+ 
+ endchoice
+ 
+ config BOOTBLOCK_SOURCE
+ 	string
+ 	default "bootblock_simple.c" if X86_BOOTBLOCK_SIMPLE
+ 	default "bootblock_normal.c" if X86_BOOTBLOCK_NORMAL
+ 
+ config UPDATE_IMAGE
+ 	bool "Update existing coreboot.rom image"
+ 	default n
+ 	help
+ 	  If this option is enabled, no new coreboot.rom file
+ 	  is created. Instead it is expected that there already
+ 	  is a suitable file for further processing.
+ 	  The bootblock will not be modified.
+ 
+ config ROMCC
+ 	bool
+ 	default n
+ 
+ config PC80_SYSTEM
+ 	bool
+ 	default y
+ 
+ config BOOTBLOCK_NORTHBRIDGE_INIT
+ 	string
+ 
+ config HAVE_CMOS_DEFAULT
+ 	def_bool n
+ 
+ config CMOS_DEFAULT_FILE
+ 	string
+ 	depends on HAVE_CMOS_DEFAULT
+ 
+ config BOOTBLOCK_SOUTHBRIDGE_INIT
+ 	string
+ 
++config HAVE_ARCH_MEMCPY
++	bool
++	default y
++
+ config BIG_ENDIAN
+ 	bool
+ 	default n
+ 
+ config LITTLE_ENDIAN
+ 	bool
+ 	default !BIG_ENDIAN
+ 
+ config IOAPIC_INTERRUPTS_ON_FSB
+ 	bool
+ 	default y if !IOAPIC_INTERRUPTS_ON_APIC_SERIAL_BUS
+ 
+ config IOAPIC_INTERRUPTS_ON_APIC_SERIAL_BUS
+ 	bool
+ 	default n
+ 
+ endmenu
+diff --git a/src/arch/x86/lib/Makefile.inc b/src/arch/x86/lib/Makefile.inc
+index 3388a9dea3..f99e429eef 100644
+--- a/src/arch/x86/lib/Makefile.inc
++++ b/src/arch/x86/lib/Makefile.inc
+@@ -1,15 +1,19 @@
+ ramstage-y += c_start.S
+ ramstage-y += cpu.c
+ ramstage-y += pci_ops_conf1.c
+ ramstage-y += pci_ops_conf2.c
+ 
+ ramstage-$(CONFIG_MMCONF_SUPPORT) += pci_ops_mmconf.c
+ 
+ ramstage-y += pci_ops_auto.c
+ ramstage-y += exception.c
+ ramstage-$(CONFIG_IOAPIC) += ioapic.c
++ramstage-y += memcpy.c
+ 
+ romstage-y += romstage_console.c
+ romstage-y += cbfs_and_run.c
++romstage-y += memcpy.c
++
++smm-y += memcpy.c
+ 
+ $(obj)/arch/x86/lib/console.ramstage.o :: $(obj)/build.h
+diff --git a/src/arch/x86/lib/memcpy.c b/src/arch/x86/lib/memcpy.c
+new file mode 100644
+index 0000000000..de210928a3
+--- /dev/null
++++ b/src/arch/x86/lib/memcpy.c
+@@ -0,0 +1,13 @@
++#include <string.h>
++
++void *memcpy(void *__restrict __dest,
++	     __const void *__restrict __src, size_t __n)
++{
++	asm("cld\n"
++	    "rep\n"
++	    "movsb"
++	    :	/* no input (?) */
++	    :"S"(__src), "D"(__dest), "c"(__n)
++	);
++	return __dest;
++}
+diff --git a/src/lib/Makefile.inc b/src/lib/Makefile.inc
+index 45cb7887a0..61b6451d0b 100644
+--- a/src/lib/Makefile.inc
++++ b/src/lib/Makefile.inc
+@@ -1,60 +1,67 @@
+ 
+ 
+ romstage-y += memset.c
+ romstage-y += memchr.c
++ifneq ($(CONFIG_HAVE_ARCH_MEMCPY),y)
+ romstage-y += memcpy.c
++endif
+ romstage-y += memcmp.c
+ romstage-y += cbfs.c
+ romstage-y += lzma.c
+ #romstage-y += lzmadecode.c
+ romstage-$(CONFIG_CACHE_AS_RAM) += ramtest.c
+ romstage-$(CONFIG_HAVE_ACPI_RESUME) += cbmem.c
+ romstage-$(CONFIG_CONSOLE_SERIAL8250) += uart8250.c
+ romstage-$(CONFIG_CONSOLE_SERIAL8250MEM) += uart8250mem.c
+ romstage-$(CONFIG_CONSOLE_CBMEM) += cbmem_console.c
+ romstage-$(CONFIG_CONSOLE_NE2K) += ne2k.c
+ romstage-$(CONFIG_CONSOLE_NE2K) += compute_ip_checksum.c
+ romstage-$(CONFIG_USBDEBUG) += usbdebug.c
+ romstage-$(CONFIG_COLLECT_TIMESTAMPS) += timestamp.c
+ 
+ ramstage-y += memset.c
+ ramstage-y += memchr.c
++ifneq ($(CONFIG_HAVE_ARCH_MEMCPY),y)
+ ramstage-y += memcpy.c
++endif
+ ramstage-y += memcmp.c
+ ramstage-y += memmove.c
+ ramstage-y += malloc.c
+ ramstage-y += delay.c
+ ramstage-y += fallback_boot.c
+ ramstage-y += compute_ip_checksum.c
+ ramstage-y += version.c
+ ramstage-y += cbfs.c
+ ramstage-y += lzma.c
+ #ramstage-y += lzmadecode.c
+ ramstage-y += gcc.c
+ ramstage-y += clog2.c
+ ramstage-y += cbmem.c
+ ramstage-$(CONFIG_CONSOLE_SERIAL8250) += uart8250.c
+ ramstage-$(CONFIG_CONSOLE_SERIAL8250MEM) += uart8250mem.c
+ ramstage-$(CONFIG_CONSOLE_CBMEM) += cbmem_console.c
+ ramstage-$(CONFIG_USBDEBUG) += usbdebug.c
+ ramstage-$(CONFIG_BOOTSPLASH) += jpeg.c
+ ramstage-$(CONFIG_TRACE) += trace.c
+ ramstage-$(CONFIG_COLLECT_TIMESTAMPS) += timestamp.c
+ 
+ driver-$(CONFIG_CONSOLE_NE2K) += ne2k.c
+ 
+-smm-y += memcpy.c cbfs.c memset.c memcmp.c
++ifneq ($(CONFIG_HAVE_ARCH_MEMCPY),y)
++smm-y += memcpy.c
++endif
++smm-y += cbfs.c memset.c memcmp.c
+ smm-$(CONFIG_CONSOLE_SERIAL8250) += uart8250.c
+ smm-$(CONFIG_CONSOLE_SERIAL8250MEM) += uart8250mem.c
+ smm-$(CONFIG_USBDEBUG) += usbdebug.c
+ 
+ $(obj)/lib/version.ramstage.o : $(obj)/build.h
+ 
+ OPTION_TABLE_H:=
+ ifeq ($(CONFIG_HAVE_OPTION_TABLE),y)
+ OPTION_TABLE_H:=$(obj)/option_table.h
+ endif
+ 
+ $(obj)/lib/uart8250mem.smm.o : $(OPTION_TABLE_H)
+ $(obj)/lib/uart8250.smm.o : $(OPTION_TABLE_H)
+ 

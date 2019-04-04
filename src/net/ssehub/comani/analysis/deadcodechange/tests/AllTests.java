@@ -18,6 +18,8 @@ import org.junit.runners.Suite.SuiteClasses;
 
 import net.ssehub.comani.analysis.deadcodechange.tests.artificial.ArtificialCommitsAllBlocksTests;
 import net.ssehub.comani.analysis.deadcodechange.tests.artificial.ArtificialCommitsConfigBlocksTests;
+import net.ssehub.comani.analysis.deadcodechange.tests.coreboot.CorebootCommitsAllBlocksTests;
+import net.ssehub.comani.analysis.deadcodechange.tests.coreboot.CorebootCommitsConfigBlocksTests;
 import net.ssehub.comani.analysis.deadcodechange.tests.linux.LinuxCommitsAllBlocksTests;
 import net.ssehub.comani.analysis.deadcodechange.tests.linux.LinuxCommitsConfigBlocksTests;
 
@@ -29,7 +31,9 @@ import net.ssehub.comani.analysis.deadcodechange.tests.linux.LinuxCommitsConfigB
     ArtificialCommitsAllBlocksTests.class,
     ArtificialCommitsConfigBlocksTests.class,
     LinuxCommitsAllBlocksTests.class,
-    LinuxCommitsConfigBlocksTests.class
+    LinuxCommitsConfigBlocksTests.class,
+    CorebootCommitsAllBlocksTests.class,
+    CorebootCommitsConfigBlocksTests.class
     })
 
 /**

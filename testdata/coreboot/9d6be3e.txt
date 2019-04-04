@@ -1,0 +1,5286 @@
+commit 9d6be3e.txt
+Author: Yinghai Lu <yinghailu@gmail.com>
+Date:   Tue Oct 24 09:37:04 2006 +0000
+
+    fix naming convention, turn X.
+    another commit is following
+    Signed-off-by: Yinghai Lu <yinghailu@gmail.com>
+    Acked-by: Stefan Reinauer <stepan@coresystems.de>
+    
+    
+    git-svn-id: svn://svn.coreboot.org/coreboot/trunk@2468 2b7e53f0-3cfb-0310-b3e9-8179ed1497e1
+
+diff --git a/src/mainboard/iwill/DK8S2/Config.lb b/src/mainboard/iwill/DK8S2/Config.lb
+deleted file mode 100644
+index 3086ab9d77..0000000000
+--- a/src/mainboard/iwill/DK8S2/Config.lb
++++ /dev/null
+@@ -1,222 +0,0 @@
+-##
+-## Compute the location and size of where this firmware image
+-## (linuxBIOS plus bootloader) will live in the boot rom chip.
+-##
+-if USE_FALLBACK_IMAGE
+-	default ROM_SECTION_SIZE   = FALLBACK_SIZE
+-	default ROM_SECTION_OFFSET = ( ROM_SIZE - FALLBACK_SIZE )
+-else
+-	default ROM_SECTION_SIZE   = ( ROM_SIZE - FALLBACK_SIZE )
+-	default ROM_SECTION_OFFSET = 0
+-end
+-
+-##
+-## Compute the start location and size size of
+-## The linuxBIOS bootloader.
+-##
+-default PAYLOAD_SIZE            = ( ROM_SECTION_SIZE - ROM_IMAGE_SIZE )
+-default CONFIG_ROM_STREAM_START = (0xffffffff - ROM_SIZE + ROM_SECTION_OFFSET + 1)
+-
+-##
+-## Compute where this copy of linuxBIOS will start in the boot rom
+-##
+-default _ROMBASE      = ( CONFIG_ROM_STREAM_START + PAYLOAD_SIZE )
+-
+-##
+-## Compute a range of ROM that can cached to speed up linuxBIOS,
+-## execution speed.
+-##
+-## XIP_ROM_SIZE must be a power of 2.
+-## XIP_ROM_BASE must be a multiple of XIP_ROM_SIZE
+-##
+-default XIP_ROM_SIZE=65536
+-default XIP_ROM_BASE = ( _ROMBASE + ROM_IMAGE_SIZE - XIP_ROM_SIZE )
+-
+-##
+-## Set all of the defaults for an x86 architecture
+-##
+-
+-arch i386 end
+-
+-##
+-## Build the objects we have code for in this directory.
+-##
+-
+-driver mainboard.o
+-if HAVE_MP_TABLE object mptable.o end
+-if HAVE_PIRQ_TABLE object irq_tables.o end
+-#object reset.o
+-
+-## ATI Rage XL framebuffering graphics driver
+-dir /drivers/ati/ragexl
+-
+-##
+-## Romcc output
+-##
+-makerule ./failover.E
+-	depends "$(MAINBOARD)/failover.c ./romcc" 
+-	action "./romcc -E -O --label-prefix=failover -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/failover.c -o $@"
+-end
+-
+-makerule ./failover.inc
+-	depends "$(MAINBOARD)/failover.c ./romcc"
+-	action "./romcc    -O --label-prefix=failover -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/failover.c -o $@"
+-end
+-
+-makerule ./auto.E 
+-	depends	"$(MAINBOARD)/auto.c option_table.h ./romcc" 
+-	action	"./romcc -E -mcpu=k8 -O2 -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/auto.c -o $@"
+-end
+-makerule ./auto.inc 
+-	depends "$(MAINBOARD)/auto.c option_table.h ./romcc"
+-	action	"./romcc    -mcpu=k8 -O2 -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/auto.c -o $@"
+-end
+-
+-##
+-## Build our 16 bit and 32 bit linuxBIOS entry code
+-##
+-mainboardinit cpu/x86/16bit/entry16.inc
+-mainboardinit cpu/x86/32bit/entry32.inc
+-ldscript /cpu/x86/16bit/entry16.lds
+-ldscript /cpu/x86/32bit/entry32.lds
+-
+-##
+-## Build our reset vector (This is where linuxBIOS is entered)
+-##
+-if USE_FALLBACK_IMAGE 
+-	mainboardinit cpu/x86/16bit/reset16.inc 
+-	ldscript /cpu/x86/16bit/reset16.lds 
+-else
+-	mainboardinit cpu/x86/32bit/reset32.inc 
+-	ldscript /cpu/x86/32bit/reset32.lds 
+-end
+-
+-### Should this be in the northbridge code?
+-mainboardinit arch/i386/lib/cpu_reset.inc
+-
+-##
+-## Include an id string (For safe flashing)
+-##
+-mainboardinit arch/i386/lib/id.inc
+-ldscript /arch/i386/lib/id.lds
+-
+-###
+-### This is the early phase of linuxBIOS startup 
+-### Things are delicate and we test to see if we should
+-### failover to another image.
+-###
+-if USE_FALLBACK_IMAGE
+-	ldscript /arch/i386/lib/failover.lds 
+-	mainboardinit ./failover.inc
+-end
+-
+-###
+-### O.k. We aren't just an intermediary anymore!
+-###
+-
+-##
+-## Setup RAM
+-##
+-mainboardinit cpu/x86/fpu/enable_fpu.inc
+-mainboardinit cpu/x86/mmx/enable_mmx.inc
+-mainboardinit cpu/x86/sse/enable_sse.inc
+-mainboardinit ./auto.inc
+-mainboardinit cpu/x86/sse/disable_sse.inc
+-mainboardinit cpu/x86/mmx/disable_mmx.inc
+-
+-##
+-## Include the secondary Configuration files 
+-##
+-dir /pc80
+-config chip.h
+-
+-# config for Iwill/DK8S2
+-chip northbridge/amd/amdk8/root_complex
+-	device pci_domain 0 on
+-		chip northbridge/amd/amdk8
+-			device pci 18.0 on # LDT 0
+-				chip southbridge/amd/amd8131
+-					device pci 0.0 on end
+-					device pci 0.1 on end
+-					device pci 1.0 on end
+-					device pci 1.1 on end
+-				end
+-				chip southbridge/amd/amd8111
+-					# this "device pci 0.0" is the parent the next one
+-					# PCI bridge
+-					device pci 0.0 on
+-						device pci 0.0 on end
+-						device pci 0.1 on end
+-						device pci 0.2 on end
+-						device pci 1.0 off end
+-					end
+-					device pci 1.0 on
+-						chip superio/winbond/w83627hf
+-							device pnp  2e.0 on      # Floppy
+-								 io 0x60 = 0x3f0
+-								irq 0x70 = 6
+-								drq 0x74 = 2
+-							end
+-							device pnp  2e.1 off     # Parallel Port
+-								 io 0x60 = 0x378
+-								irq 0x70 = 7
+-							end
+-							device pnp  2e.2 on      # Com1
+-								 io 0x60 = 0x3f8
+-								irq 0x70 = 4
+-							end
+-							device pnp  2e.3 off     # Com2
+-								io 0x60 = 0x2f8
+-								irq 0x70 = 3
+-							end
+-							device pnp  2e.5 on      # Keyboard
+-								 io 0x60 = 0x60
+-								 io 0x62 = 0x64
+-							       irq 0x70 = 1
+-								irq 0x72 = 12
+-							end
+-							device pnp  2e.6 off end # CIR
+-							device pnp  2e.7 off end # GAME_MIDI_GIPO1
+-							device pnp  2e.8 off end # GPIO2
+-							device pnp  2e.9 off end # GPIO3
+-							device pnp  2e.a off end # ACPI
+-							device pnp  2e.b on      # HW Monitor
+-								 io 0x60 = 0x290
+-							end
+-							register "com1" = "{1}"
+-						#	register "com1" = "{1, 0, 0x3f8, 4}"
+-						#	register "lpt" = "{1}"
+-						end
+-					end
+-					device pci 1.1 on end
+-					device pci 1.2 on end
+-					device pci 1.3 on end
+-					device pci 1.5 off end
+-					device pci 1.6 off end
+-				end
+-			end # LDT0
+-			device pci 18.0 on end # LDT1
+-			device pci 18.0 on end # LDT2
+-			device pci 18.1 on end
+-			device pci 18.2 on end
+-			device pci 18.3 on end
+-		end
+-		chip northbridge/amd/amdk8
+-			device pci 19.0 on end
+-			device pci 19.0 on end
+-			device pci 19.0 on end
+-			device pci 19.1 on end
+-			device pci 19.2 on end
+-			device pci 19.3 on end
+-		end
+-	end
+-	device apic_cluster 0 on
+-		chip cpu/amd/socket_940
+-			device apic 0 on end
+-		end
+-		chip cpu/amd/socket_940
+-			device apic 1 on end
+-		end
+-	end
+-end
+-
+diff --git a/src/mainboard/iwill/DK8S2/Options.lb b/src/mainboard/iwill/DK8S2/Options.lb
+deleted file mode 100644
+index c0a1043c16..0000000000
+--- a/src/mainboard/iwill/DK8S2/Options.lb
++++ /dev/null
+@@ -1,215 +0,0 @@
+-uses HAVE_MP_TABLE
+-uses HAVE_PIRQ_TABLE
+-uses USE_FALLBACK_IMAGE
+-uses HAVE_FALLBACK_BOOT
+-uses HAVE_HARD_RESET
+-uses IRQ_SLOT_COUNT
+-uses HAVE_OPTION_TABLE
+-uses CONFIG_MAX_CPUS
+-uses CONFIG_MAX_PHYSICAL_CPUS
+-uses CONFIG_IOAPIC
+-uses CONFIG_SMP
+-uses FALLBACK_SIZE
+-uses ROM_SIZE
+-uses ROM_SECTION_SIZE
+-uses ROM_IMAGE_SIZE
+-uses ROM_SECTION_SIZE
+-uses ROM_SECTION_OFFSET
+-uses CONFIG_ROM_STREAM
+-uses CONFIG_ROM_STREAM_START
+-uses PAYLOAD_SIZE
+-uses _ROMBASE
+-uses XIP_ROM_SIZE
+-uses XIP_ROM_BASE
+-uses STACK_SIZE
+-uses HEAP_SIZE
+-uses USE_OPTION_TABLE
+-uses LB_CKS_RANGE_START
+-uses LB_CKS_RANGE_END
+-uses LB_CKS_LOC
+-uses MAINBOARD
+-uses MAINBOARD_PART_NUMBER
+-uses MAINBOARD_VENDOR
+-uses MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID
+-uses MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID
+-uses LINUXBIOS_EXTRA_VERSION
+-uses _RAMBASE
+-uses TTYS0_BAUD
+-uses TTYS0_BASE
+-uses TTYS0_LCS
+-uses DEFAULT_CONSOLE_LOGLEVEL
+-uses MAXIMUM_CONSOLE_LOGLEVEL
+-uses MAINBOARD_POWER_ON_AFTER_POWER_FAIL
+-uses CONFIG_CONSOLE_SERIAL8250
+-uses HAVE_INIT_TIMER
+-uses CONFIG_GDB_STUB
+-uses CROSS_COMPILE
+-uses CC
+-uses HOSTCC
+-uses OBJCOPY
+-
+-uses CONFIG_USE_INIT
+-
+-## ROM_SIZE is the size of boot ROM that this board will use.
+-default ROM_SIZE=524288
+-
+-###
+-### Build options
+-###
+-
+-##
+-## FALLBACK_SIZE is the amount of the ROM the complete fallback image will use
+-##
+-default FALLBACK_SIZE=0x40000
+-
+-##
+-## Build code for the fallback boot
+-##
+-default HAVE_FALLBACK_BOOT=1
+-
+-##
+-## Build code to reset the motherboard from linuxBIOS
+-##
+-default HAVE_HARD_RESET=1
+-
+-##
+-## Build code to export a programmable irq routing table
+-##
+-default HAVE_PIRQ_TABLE=1
+-default IRQ_SLOT_COUNT=9
+-
+-##
+-## Build code to export an x86 MP table
+-## Useful for specifying IRQ routing values
+-##
+-default HAVE_MP_TABLE=1
+-
+-##
+-## Build code to export a CMOS option table
+-##
+-default HAVE_OPTION_TABLE=1
+-
+-##
+-## Move the default LinuxBIOS cmos range off of AMD RTC registers
+-##
+-default LB_CKS_RANGE_START=49
+-default LB_CKS_RANGE_END=122
+-default LB_CKS_LOC=123
+-
+-##
+-## Build code for SMP support
+-## Only worry about 2 micro processors
+-##
+-default CONFIG_SMP=1
+-default CONFIG_MAX_CPUS=2
+-default CONFIG_MAX_PHYSICAL_CPUS=2
+-
+-##
+-## Build code to setup a generic IOAPIC
+-##
+-default CONFIG_IOAPIC=1
+-
+-##
+-## Clean up the motherboard id strings
+-##
+-default MAINBOARD_PART_NUMBER="HDAMA"
+-default MAINBOARD_VENDOR="ARIMA"
+-default MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID=0x161f
+-default MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID=0x3016
+-
+-
+-###
+-### LinuxBIOS layout values
+-###
+-
+-## ROM_IMAGE_SIZE is the amount of space to allow linuxBIOS to occupy.
+-default ROM_IMAGE_SIZE = 65536
+-
+-##
+-## Use a small 8K stack
+-##
+-default STACK_SIZE=0x2000
+-
+-##
+-## Use a small 16K heap
+-##
+-default HEAP_SIZE=0x4000
+-
+-##
+-## Only use the option table in a normal image
+-##
+-default USE_OPTION_TABLE = !USE_FALLBACK_IMAGE
+-
+-##
+-## LinuxBIOS C code runs at this location in RAM
+-##
+-default _RAMBASE=0x00004000
+-
+-##
+-## Load the payload from the ROM
+-##
+-default CONFIG_ROM_STREAM = 1
+-
+-###
+-### Defaults of options that you may want to override in the target config file
+-### 
+-
+-##
+-## The default compiler
+-##
+-#default CC="$(CROSS_COMPILE)gcc -m32"
+-#default HOSTCC="gcc"
+-
+-##
+-## Disable the gdb stub by default
+-##
+-default CONFIG_GDB_STUB=0
+-
+-##
+-## The Serial Console
+-##
+-
+-# To Enable the Serial Console
+-default CONFIG_CONSOLE_SERIAL8250=1
+-
+-## Select the serial console baud rate
+-default TTYS0_BAUD=115200
+-#default TTYS0_BAUD=57600
+-#default TTYS0_BAUD=38400
+-#default TTYS0_BAUD=19200
+-#default TTYS0_BAUD=9600
+-#default TTYS0_BAUD=4800
+-#default TTYS0_BAUD=2400
+-#default TTYS0_BAUD=1200
+-
+-# Select the serial console base port
+-default TTYS0_BASE=0x3f8
+-
+-# Select the serial protocol
+-# This defaults to 8 data bits, 1 stop bit, and no parity
+-default TTYS0_LCS=0x3
+-
+-##
+-### Select the linuxBIOS loglevel
+-##
+-## EMERG      1   system is unusable               
+-## ALERT      2   action must be taken immediately 
+-## CRIT       3   critical conditions              
+-## ERR        4   error conditions                 
+-## WARNING    5   warning conditions               
+-## NOTICE     6   normal but significant condition 
+-## INFO       7   informational                    
+-## DEBUG      8   debug-level messages             
+-## SPEW       9   Way too many details             
+-
+-## Request this level of debugging output
+-default  DEFAULT_CONSOLE_LOGLEVEL=8
+-## At a maximum only compile in this level of debugging
+-default  MAXIMUM_CONSOLE_LOGLEVEL=8
+-
+-##
+-## Select power on after power fail setting
+-default MAINBOARD_POWER_ON_AFTER_POWER_FAIL="MAINBOARD_POWER_ON"
+-
+-### End Options.lb
+-end
+diff --git a/src/mainboard/iwill/DK8S2/auto.c b/src/mainboard/iwill/DK8S2/auto.c
+deleted file mode 100644
+index 06b3e42cdf..0000000000
+--- a/src/mainboard/iwill/DK8S2/auto.c
++++ /dev/null
+@@ -1,201 +0,0 @@
+-#define ASSEMBLY 1
+-#include <stdint.h>
+-#include <device/pci_def.h>
+-#include <arch/io.h>
+-#include <device/pnp_def.h>
+-#include <arch/romcc_io.h>
+-#include <cpu/x86/lapic.h>
+-#include <arch/cpu.h>
+-#include "option_table.h"
+-#include "pc80/mc146818rtc_early.c"
+-#include "pc80/serial.c"
+-#include "arch/i386/lib/console.c"
+-#include "ram/ramtest.c"
+-#include "southbridge/amd/amd8111/amd8111_early_smbus.c"
+-#include "northbridge/amd/amdk8/raminit.h"
+-#include "cpu/amd/model_fxx/apic_timer.c"
+-#include "lib/delay.c"
+-#include "cpu/x86/lapic/boot_cpu.c"
+-#include "northbridge/amd/amdk8/reset_test.c"
+-#include "northbridge/amd/amdk8/debug.c"
+-#include <cpu/amd/model_fxx_rev.h>
+-#include "superio/winbond/w83627hf/w83627hf_early_serial.c"
+-#include "cpu/amd/mtrr/amd_earlymtrr.c"
+-#include "cpu/x86/bist.h"
+-
+-
+-#define SERIAL_DEV PNP_DEV(0x2e, W83627HF_SP1)
+-
+-static void hard_reset(void)
+-{
+-	set_bios_reset();
+-
+-	/* enable cf9 */
+-	pci_write_config8(PCI_DEV(0, 0x04, 3), 0x41, 0xf1);
+-	/* reset */
+-	outb(0x0e, 0x0cf9);
+-}
+-
+-static void soft_reset(void)
+-{
+-	set_bios_reset();
+-	pci_write_config8(PCI_DEV(0, 0x04, 0), 0x47, 1);
+-}
+-
+-/*
+- * GPIO28 of 8111 will control H0_MEMRESET_L
+- * GPIO29 of 8111 will control H1_MEMRESET_L
+- */
+-static void memreset_setup(void)
+-{
+-	if (is_cpu_pre_c0()) {
+-		/* Set the memreset low */
+-		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(0<<0), SMBUS_IO_BASE + 0xc0 + 28);
+-		/* Ensure the BIOS has control of the memory lines */
+-		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(0<<0), SMBUS_IO_BASE + 0xc0 + 29);
+-	} else {
+-		/* Ensure the CPU has controll of the memory lines */
+-		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(1<<0), SMBUS_IO_BASE + 0xc0 + 29);
+-	}
+-}
+-
+-static void memreset(int controllers, const struct mem_controller *ctrl)
+-{
+-	if (is_cpu_pre_c0()) {
+-		udelay(800);
+-		/* Set memreset_high */
+-		outb((0<<7)|(0<<6)|(0<<5)|(0<<4)|(1<<2)|(1<<0), SMBUS_IO_BASE + 0xc0 + 28);
+-		udelay(90);
+-	}
+-}
+-
+-static unsigned int generate_row(uint8_t node, uint8_t row, uint8_t maxnodes)
+-{
+-	/* Routing Table Node i 
+-	 *
+-	 * F0: 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58, 0x5c 
+-	 *  i:	  0,	1,    2,    3,	  4,	5,    6,    7
+-	 *
+-	 * [ 0: 3] Request Route
+-	 *     [0] Route to this node
+-	 *     [1] Route to Link 0
+-	 *     [2] Route to Link 1
+-	 *     [3] Route to Link 2
+-	 * [11: 8] Response Route
+-	 *     [0] Route to this node
+-	 *     [1] Route to Link 0
+-	 *     [2] Route to Link 1
+-	 *     [3] Route to Link 2
+-	 * [19:16] Broadcast route
+-	 *     [0] Route to this node
+-	 *     [1] Route to Link 0
+-	 *     [2] Route to Link 1
+-	 *     [3] Route to Link 2
+-	 */
+-
+-	uint32_t ret=0x00010101; /* default row entry */
+-
+-	static const unsigned int rows_2p[2][2] = {
+-		{ 0x00050101, 0x00010404 },
+-		{ 0x00010404, 0x00050101 }
+-	};
+-
+-	if(maxnodes>2) {
+-		print_debug("this mainboard is only designed for 2 cpus\r\n");
+-		maxnodes=2;
+-	}
+-
+-	if (!(node>=maxnodes || row>=maxnodes)) {
+-		ret=rows_2p[node][row];
+-	}
+-
+-	return ret;
+-}
+-
+-static inline void activate_spd_rom(const struct mem_controller *ctrl)
+-{
+-	/* nothing to do */
+-}
+-
+-static inline int spd_read_byte(unsigned device, unsigned address)
+-{
+-	return smbus_read_byte(device, address);
+-}
+-
+-#include "northbridge/amd/amdk8/raminit.c"
+-#include "northbridge/amd/amdk8/coherent_ht.c"
+-#include "northbridge/amd/amdk8/incoherent_ht.c"
+-#include "sdram/generic_sdram.c"
+-#include "northbridge/amd/amdk8/resourcemap.c"
+-#include "cpu/amd/dualcore/dualcore.c"
+-
+-#define FIRST_CPU  1
+-#define SECOND_CPU 1
+-#define TOTAL_CPUS (FIRST_CPU + SECOND_CPU)
+-static void main(unsigned long bist)
+-{
+-	static const struct mem_controller cpu[] = {
+-#if FIRST_CPU
+-		{
+-			.node_id = 0,
+-			.f0 = PCI_DEV(0, 0x18, 0),
+-			.f1 = PCI_DEV(0, 0x18, 1),
+-			.f2 = PCI_DEV(0, 0x18, 2),
+-			.f3 = PCI_DEV(0, 0x18, 3),
+-			.channel0 = { (0xa<<3)|0, (0xa<<3)|2, 0, 0 },
+-			.channel1 = { (0xa<<3)|1, (0xa<<3)|3, 0, 0 },
+-		},
+-#endif
+-#if SECOND_CPU
+-		{
+-			.node_id = 1,
+-			.f0 = PCI_DEV(0, 0x19, 0),
+-			.f1 = PCI_DEV(0, 0x19, 1),
+-			.f2 = PCI_DEV(0, 0x19, 2),
+-			.f3 = PCI_DEV(0, 0x19, 3),
+-			.channel0 = { (0xa<<3)|4, (0xa<<3)|6, 0, 0 },
+-			.channel1 = { (0xa<<3)|5, (0xa<<3)|7, 0, 0 },
+-		},
+-#endif
+-	};
+-
+-	int needs_reset;
+-        unsigned nodeid;
+-
+-	if (bist == 0) {
+-		k8_init_and_stop_secondaries();
+-	}
+-	/* Setup the console */	
+-	w83627hf_enable_serial(SERIAL_DEV, TTYS0_BASE);
+-	uart_init();
+-	console_init();
+-
+-	/* Halt if there was a built in self test failure */
+-	report_bist_failure(bist);
+-
+-	setup_default_resource_map();
+-	needs_reset = setup_coherent_ht_domain();
+-	needs_reset |= ht_setup_chain(PCI_DEV(0, 0x18, 0), 0x80);
+-	if (needs_reset) {
+-		print_info("ht reset -\r\n");
+-		soft_reset();
+-	}
+-	
+-#if 0
+-	print_pci_devices();
+-#endif
+-
+-	enable_smbus();
+-
+-#if 0
+-	dump_spd_registers(&cpu[0]);
+-#endif
+-
+-	memreset_setup();
+-	sdram_initialize(sizeof(cpu)/sizeof(cpu[0]), cpu);
+-
+-#if 0
+-	dump_pci_devices();
+-	dump_pci_device(PCI_DEV(0, 0x18, 2));
+-#endif
+-}
+diff --git a/src/mainboard/iwill/DK8S2/chip.h b/src/mainboard/iwill/DK8S2/chip.h
+deleted file mode 100644
+index 402cd5e6d2..0000000000
+--- a/src/mainboard/iwill/DK8S2/chip.h
++++ /dev/null
+@@ -1,5 +0,0 @@
+-extern struct chip_operations mainboard_Iwill_DK8S2_ops;
+-
+-struct mainboard_Iwill_DK8S2_config {
+-	int nothing;
+-};
+diff --git a/src/mainboard/iwill/DK8S2/cmos.layout b/src/mainboard/iwill/DK8S2/cmos.layout
+deleted file mode 100644
+index 5eb88b9a5a..0000000000
+--- a/src/mainboard/iwill/DK8S2/cmos.layout
++++ /dev/null
+@@ -1,98 +0,0 @@
+-entries
+-
+-#start-bit length  config config-ID    name
+-#0            8       r       0        seconds
+-#8            8       r       0        alarm_seconds
+-#16           8       r       0        minutes
+-#24           8       r       0        alarm_minutes
+-#32           8       r       0        hours
+-#40           8       r       0        alarm_hours
+-#48           8       r       0        day_of_week
+-#56           8       r       0        day_of_month
+-#64           8       r       0        month
+-#72           8       r       0        year
+-#80           4       r       0        rate_select
+-#84           3       r       0        REF_Clock
+-#87           1       r       0        UIP
+-#88           1       r       0        auto_switch_DST
+-#89           1       r       0        24_hour_mode
+-#90           1       r       0        binary_values_enable
+-#91           1       r       0        square-wave_out_enable
+-#92           1       r       0        update_finished_enable
+-#93           1       r       0        alarm_interrupt_enable
+-#94           1       r       0        periodic_interrupt_enable
+-#95           1       r       0        disable_clock_updates
+-#96         288       r       0        temporary_filler
+-0          384       r       0        reserved_memory
+-384          1       e       4        boot_option
+-385          1       e       4        last_boot
+-386          1       e       1        ECC_memory
+-388          4       r       0        reboot_bits
+-392          3       e       5        baud_rate
+-395          1       e       1        hw_scrubber
+-396          1       e       1        interleave_chip_selects
+-397          2       e       8        max_mem_clock
+-399	     1	     e	     2	      dual_core
+-400          1       e       1        power_on_after_fail
+-412          4       e       6        debug_level
+-416          4       e       7        boot_first
+-420          4       e       7        boot_second
+-424          4       e       7        boot_third
+-428          4       h       0        boot_index
+-432	     8       h       0        boot_countdown
+-440          4       e       9        slow_cpu
+-444          1       e       1        nmi
+-445          1       e       1        iommu
+-728        256       h       0        user_data
+-984         16       h       0        check_sum
+-# Reserve the extended AMD configuration registers
+-1000        24       r       0        reserved_memory
+-
+-
+-
+-enumerations
+-
+-#ID value   text
+-1     0     Disable
+-1     1     Enable
+-2     0     Enable
+-2     1     Disable
+-4     0     Fallback
+-4     1     Normal
+-5     0     115200
+-5     1     57600
+-5     2     38400
+-5     3     19200
+-5     4     9600
+-5     5     4800
+-5     6     2400
+-5     7     1200
+-6     6     Notice
+-6     7     Info
+-6     8     Debug
+-6     9     Spew
+-7     0     Network
+-7     1     HDD
+-7     2     Floppy
+-7     8     Fallback_Network
+-7     9     Fallback_HDD
+-7     10    Fallback_Floppy
+-#7     3     ROM
+-8     0     DDR400
+-8     1     DDR333
+-8     2     DDR266
+-8     3     DDR200
+-9     0     off
+-9     1     87.5%
+-9     2     75.0%
+-9     3     62.5%
+-9     4     50.0%
+-9     5     37.5%
+-9     6     25.0%
+-9     7     12.5%
+-
+-checksums
+-
+-checksum 392 983 984
+-
+-
+diff --git a/src/mainboard/iwill/DK8S2/failover.c b/src/mainboard/iwill/DK8S2/failover.c
+deleted file mode 100644
+index 262fdd60bd..0000000000
+--- a/src/mainboard/iwill/DK8S2/failover.c
++++ /dev/null
+@@ -1,66 +0,0 @@
+-#define ASSEMBLY 1
+-#include <stdint.h>
+-#include <device/pci_def.h>
+-#include <device/pci_ids.h>
+-#include <arch/io.h>
+-#include <arch/romcc_io.h>
+-#include <cpu/x86/lapic.h>
+-#include "pc80/mc146818rtc_early.c"
+-#include "southbridge/amd/amd8111/amd8111_enable_rom.c"
+-#include "northbridge/amd/amdk8/early_ht.c"
+-#include "cpu/x86/lapic/boot_cpu.c"
+-#include "cpu/x86/mtrr/earlymtrr.c"
+-#include "northbridge/amd/amdk8/reset_test.c"
+-
+-static unsigned long main(unsigned long bist)
+-{
+-        unsigned nodeid;
+-
+-	/* Make cerain my local apic is useable */
+-	enable_lapic();
+-
+-	/* Is this a cpu only reset? */
+-	if (early_mtrr_init_detected()) {
+-		if (last_boot_normal()) {
+-			goto normal_image;
+-		} else {
+-			goto fallback_image;
+-		}
+-	}
+-	/* Is this a secondary cpu? */
+-	if (!boot_cpu()) {
+-		if (last_boot_normal()) {
+-			goto normal_image;
+-		} else {
+-			goto fallback_image;
+-		}
+-	}
+-	
+-
+-	/* Nothing special needs to be done to find bus 0 */
+-	/* Allow the HT devices to be found */
+-	enumerate_ht_chain();
+-	
+-	/* Setup the 8111 */
+-	amd8111_enable_rom();
+-
+-	/* Is this a deliberate reset by the bios */
+-	if (bios_reset_detected() && last_boot_normal()) {
+-		goto normal_image;
+-	}
+-	/* This is the primary cpu how should I boot? */
+-	else if (do_normal_boot()) {
+-		goto normal_image;
+-	}
+-	else {
+-		goto fallback_image;
+-	}
+- normal_image:
+-	asm volatile ("jmp __normal_image" 
+-		: /* outputs */ 
+-		: "a" (bist) /* inputs */
+-		: /* clobbers */
+-		);
+- fallback_image:
+-	return bist;
+-}
+diff --git a/src/mainboard/iwill/DK8S2/irq_tables.c b/src/mainboard/iwill/DK8S2/irq_tables.c
+deleted file mode 100644
+index 28c90e0f85..0000000000
+--- a/src/mainboard/iwill/DK8S2/irq_tables.c
++++ /dev/null
+@@ -1,41 +0,0 @@
+-/* This file was generated by getpir.c, do not modify! 
+-   (but if you do, please run checkpir on it to verify)
+- * Contains the IRQ Routing Table dumped directly from your memory, which BIOS sets up
+- *
+- * Documentation at : http://www.microsoft.com/hwdev/busbios/PCIIRQ.HTM
+-*/
+-
+-#include <arch/pirq_routing.h>
+-
+-const struct irq_routing_table intel_irq_routing_table = {
+-	PIRQ_SIGNATURE,  /* u32 signature */
+-	PIRQ_VERSION,    /* u16 version   */
+-	32+16*12,	 /* there can be total 12 devices on the bus */
+-	0x00,		 /* Where the interrupt router lies (bus) */
+-	(0x07<<3)|0x3,   /* Where the interrupt router lies (dev) */
+-	0,		 /* IRQs devoted exclusively to PCI usage */
+-	0x1022,		 /* Vendor */
+-	0x746b,		 /* Device */
+-	0,		 /* Crap (miniport) */
+-	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, /* u8 rfu[11] */
+-	0x6d,         /*  u8 checksum , this hase to set to some value that would give 0 after the sum of all bytes for this structure (including checksum) */
+-	{
+-		/* bus,     dev|fn,   {link, bitmap}, {link, bitmap}, {link, bitmap}, {link, bitmap},  slot, rfu */
+-		{0x00,(0x07<<3)|0x0, {{0x01, 0xdef8}, {0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0x0def8}}, 0x0, 0x0},
+-		{0x03,(0x00<<3)|0x0, {{0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x0000}, {0x04, 0x0def8}}, 0x0, 0x0},
+-		{0x02,(0x01<<3)|0x0, {{0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0x0def8}}, 0x1, 0x0},
+-		{0x02,(0x02<<3)|0x0, {{0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0xdef8}, {0x02, 0x0def8}}, 0x2, 0x0},
+-		{0x01,(0x01<<3)|0x0, {{0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0x0def8}}, 0x3, 0x0},
+-		{0x01,(0x02<<3)|0x0, {{0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0xdef8}, {0x02, 0x0def8}}, 0x4, 0x0},
+-		{0x03,(0x04<<3)|0x0, {{0x01, 0xdef8}, {0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0x0def8}}, 0x5, 0x0},
+-		{0x03,(0x05<<3)|0x0, {{0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0x0def8}}, 0x6, 0x0},
+-		{0x03,(0x06<<3)|0x0, {{0x03, 0xdef8}, {0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x00000}}, 0x0, 0x0},
+-		{0x02,(0x03<<3)|0x0, {{0x04, 0xdef8}, {0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x00000}}, 0x0, 0x0},
+-		{0x02,(0x04<<3)|0x0, {{0x01, 0xdef8}, {0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x00000}}, 0x0, 0x0},
+-		{0x02,(0x05<<3)|0x0, {{0x02, 0xdef8}, {0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x00000}}, 0x0, 0x0},
+-	}
+-};
+-unsigned long write_pirq_routing_table(unsigned long addr)
+-{
+-        return copy_pirq_routing_table(addr);
+-}
+diff --git a/src/mainboard/iwill/DK8S2/mainboard.c b/src/mainboard/iwill/DK8S2/mainboard.c
+deleted file mode 100644
+index 465eb3d6d0..0000000000
+--- a/src/mainboard/iwill/DK8S2/mainboard.c
++++ /dev/null
+@@ -1,11 +0,0 @@
+-#include <console/console.h>
+-#include <device/device.h>
+-#include <device/pci.h>
+-#include <device/pci_ids.h>
+-#include <device/pci_ops.h>
+-#include "chip.h"
+-
+-struct chip_operations mainboard_Iwill_DK8S2_ops = {
+-	CHIP_NAME("Iwill DK8S2 mainboard")
+-};
+-
+diff --git a/src/mainboard/iwill/DK8S2/mptable.c b/src/mainboard/iwill/DK8S2/mptable.c
+deleted file mode 100644
+index 34e6037c21..0000000000
+--- a/src/mainboard/iwill/DK8S2/mptable.c
++++ /dev/null
+@@ -1,232 +0,0 @@
+-#include <console/console.h>
+-#include <arch/smp/mpspec.h>
+-#include <device/pci.h>
+-#include <string.h>
+-#include <stdint.h>
+-
+-void *smp_write_config_table(void *v)
+-{
+-	static const char sig[4] = "PCMP";
+-	static const char oem[8] = "IWILL   ";
+-	static const char productid[12] = "DK8X        ";
+-	struct mp_config_table *mc;
+-	unsigned char bus_num;
+-	unsigned char bus_isa;
+-	unsigned char bus_8131_1;
+-	unsigned char bus_8131_2;
+-	unsigned char bus_8111_1;
+-
+-	mc = (void *)(((char *)v) + SMP_FLOATING_TABLE_LEN);
+-	memset(mc, 0, sizeof(*mc));
+-
+-	memcpy(mc->mpc_signature, sig, sizeof(sig));
+-	mc->mpc_length = sizeof(*mc); /* initially just the header */
+-	mc->mpc_spec = 0x04;
+-	mc->mpc_checksum = 0; /* not yet computed */
+-	memcpy(mc->mpc_oem, oem, sizeof(oem));
+-	memcpy(mc->mpc_productid, productid, sizeof(productid));
+-	mc->mpc_oemptr = 0;
+-	mc->mpc_oemsize = 0;
+-	mc->mpc_entry_count = 0; /* No entries yet... */
+-	mc->mpc_lapic = LAPIC_ADDR;
+-	mc->mpe_length = 0;
+-	mc->mpe_checksum = 0;
+-	mc->reserved = 0;
+-
+-	smp_write_processors(mc);
+-
+-	{
+-		device_t dev;
+-
+-		/* 8111 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x03,0));
+-		if (dev) {
+-			bus_8111_1 = pci_read_config8(dev, PCI_SECONDARY_BUS);
+-			bus_isa	   = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+-			bus_isa++;
+-		}
+-		else {
+-			printk_debug("ERROR - could not find PCI 1:03.0, using defaults\n");
+-
+-			bus_8111_1 = 4;
+-			bus_isa = 5;
+-		}
+-		/* 8131-1 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x01,0));
+-		if (dev) {
+-			bus_8131_1 = pci_read_config8(dev, PCI_SECONDARY_BUS);
+-
+-		}
+-		else {
+-			printk_debug("ERROR - could not find PCI 1:01.0, using defaults\n");
+-
+-			bus_8131_1 = 2;
+-		}
+-		/* 8131-2 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x02,0));
+-		if (dev) {
+-			bus_8131_2 = pci_read_config8(dev, PCI_SECONDARY_BUS);
+-
+-		}
+-		else {
+-			printk_debug("ERROR - could not find PCI 1:02.0, using defaults\n");
+-
+-			bus_8131_2 = 3;
+-		}
+-	}
+-
+-	/* define bus and isa numbers */
+-	for(bus_num = 0; bus_num < bus_isa; bus_num++) {
+-		smp_write_bus(mc, bus_num, "PCI	  ");
+-	}
+-	smp_write_bus(mc, bus_isa, "ISA	  ");
+-
+-	/* IOAPIC handling */
+-	smp_write_ioapic(mc, 2, 0x11, 0xfec00000);
+-	{
+-		device_t dev;
+-		struct resource *res;
+-		/* 8131 apic 3 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x01,1));
+-		if (dev) {
+-			res = find_resource(dev, PCI_BASE_ADDRESS_0);
+-			if (res) {
+-				smp_write_ioapic(mc, 0x03, 0x11, res->base);
+-			}
+-		}
+-		/* 8131 apic 4 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x02,1));
+-		if (dev) {
+-			res = find_resource(dev, PCI_BASE_ADDRESS_0);
+-			if (res) {
+-				smp_write_ioapic(mc, 0x04, 0x11, res->base);
+-			}
+-		}
+-	}
+-
+-	/* ISA backward compatibility interrupts  */
+-	smp_write_intsrc(mc, mp_ExtINT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x00, 0x02, 0x00);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x01, 0x02, 0x01);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x00, 0x02, 0x02);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x03, 0x02, 0x03);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x04, 0x02, 0x04);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x05, 0x02, 0x05);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x06, 0x02, 0x06);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x07, 0x02, 0x07);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x08, 0x02, 0x08);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x09, 0x02, 0x09);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0a, 0x02, 0x0a);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0b, 0x02, 0x0b);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0c, 0x02, 0x0c);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0d, 0x02, 0x0d);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0e, 0x02, 0x0e);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0f, 0x02, 0x0f);
+-
+-	/* Standard local interrupt assignments */
+-	smp_write_lintsrc(mc, mp_ExtINT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x00, MP_APIC_ALL, 0x00);
+-	smp_write_lintsrc(mc, mp_NMI, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x00, MP_APIC_ALL, 0x01);
+-
+-
+-	/* PCI Slot 1 */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (1<<2)|0, 0x02, 0x11);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (1<<2)|1, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (1<<2)|2, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (1<<2)|3, 0x02, 0x10);
+-
+-	/* PCI Slot 2 */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (2<<2)|0, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (2<<2)|1, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (2<<2)|2, 0x02, 0x10);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (2<<2)|3, 0x02, 0x11);
+-
+-	/* PCI Slot 3 */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (1<<2)|0, 0x02, 0x11);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (1<<2)|1, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (1<<2)|2, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (1<<2)|3, 0x02, 0x10);
+-
+-	/* PCI Slot 4 */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (2<<2)|0, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (2<<2)|1, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (2<<2)|2, 0x02, 0x10);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (2<<2)|3, 0x02, 0x11);
+-
+-	/* PCI Slot 5 */
+-#warning "FIXME get the irqs right, it's just hacked to work for now"
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (5<<2)|0, 0x02, 0x11);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (5<<2)|1, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (5<<2)|2, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (5<<2)|3, 0x02, 0x10);
+-
+-	/* PCI Slot 6 */
+-#warning "FIXME get the irqs right, it's just hacked to work for now"
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (4<<2)|0, 0x02, 0x10);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (4<<2)|1, 0x02, 0x11);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (4<<2)|2, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (4<<2)|3, 0x02, 0x13);
+-
+-	/* On board nics */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (3<<2)|0, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (4<<2)|0, 0x02, 0x13);
+-
+-	/* There is no extension information... */
+-
+-	/* Compute the checksums */
+-	mc->mpe_checksum = smp_compute_checksum(smp_next_mpc_entry(mc), mc->mpe_length);
+-	mc->mpc_checksum = smp_compute_checksum(mc, mc->mpc_length);
+-	printk_debug("Wrote the mp table end at: %p - %p\n",
+-		mc, smp_next_mpe_entry(mc));
+-	return smp_next_mpe_entry(mc);
+-}
+-
+-unsigned long write_smp_table(unsigned long addr)
+-{
+-	void *v;
+-	v = smp_write_floating_table(addr);
+-	return (unsigned long)smp_write_config_table(v);
+-}
+-
+diff --git a/src/mainboard/iwill/DK8S2/reset.c b/src/mainboard/iwill/DK8S2/reset.c
+deleted file mode 100644
+index 3db3956ec6..0000000000
+--- a/src/mainboard/iwill/DK8S2/reset.c
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#include "../../../southbridge/amd/amd8111/amd8111_reset.c"
+-
+-void hard_reset(void)
+-{
+-	amd8111_hard_reset(0, 0);
+-}
+diff --git a/src/mainboard/iwill/DK8X/Config.lb b/src/mainboard/iwill/DK8X/Config.lb
+deleted file mode 100644
+index a7ae47449d..0000000000
+--- a/src/mainboard/iwill/DK8X/Config.lb
++++ /dev/null
+@@ -1,197 +0,0 @@
+-##
+-## Compute the location and size of where this firmware image
+-## (linuxBIOS plus bootloader) will live in the boot rom chip.
+-##
+-if USE_FALLBACK_IMAGE
+-	default ROM_SECTION_SIZE   = FALLBACK_SIZE
+-	default ROM_SECTION_OFFSET = ( ROM_SIZE - FALLBACK_SIZE )
+-else
+-	default ROM_SECTION_SIZE   = ( ROM_SIZE - FALLBACK_SIZE )
+-	default ROM_SECTION_OFFSET = 0
+-end
+-
+-##
+-## Compute the start location and size size of
+-## The linuxBIOS bootloader.
+-##
+-default PAYLOAD_SIZE            = ( ROM_SECTION_SIZE - ROM_IMAGE_SIZE )
+-default CONFIG_ROM_STREAM_START = (0xffffffff - ROM_SIZE + ROM_SECTION_OFFSET + 1)
+-
+-##
+-## Compute where this copy of linuxBIOS will start in the boot rom
+-##
+-default _ROMBASE      = ( CONFIG_ROM_STREAM_START + PAYLOAD_SIZE )
+-
+-##
+-## Compute a range of ROM that can cached to speed up linuxBIOS,
+-## execution speed.
+-##
+-## XIP_ROM_SIZE must be a power of 2.
+-## XIP_ROM_BASE must be a multiple of XIP_ROM_SIZE
+-##
+-default XIP_ROM_SIZE=65536
+-default XIP_ROM_BASE = ( _ROMBASE + ROM_IMAGE_SIZE - XIP_ROM_SIZE )
+-
+-##
+-## Set all of the defaults for an x86 architecture
+-##
+-
+-arch i386 end
+-
+-##
+-## Build the objects we have code for in this directory.
+-##
+-
+-driver mainboard.o
+-if HAVE_MP_TABLE object mptable.o end
+-if HAVE_PIRQ_TABLE object irq_tables.o end
+-#object reset.o
+-
+-##
+-## Romcc output
+-##
+-makerule ./failover.E
+-	depends "$(MAINBOARD)/failover.c ./romcc" 
+-	action "./romcc -E -O --label-prefix=failover -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/failover.c -o $@"
+-end
+-
+-makerule ./failover.inc
+-	depends "$(MAINBOARD)/failover.c ./romcc"
+-	action "./romcc    -O --label-prefix=failover -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/failover.c -o $@"
+-end
+-
+-makerule ./auto.E 
+-	depends	"$(MAINBOARD)/auto.c option_table.h ./romcc" 
+-	action	"./romcc -E -mcpu=k8 -O2 -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/auto.c -o $@"
+-end
+-makerule ./auto.inc 
+-	depends "$(MAINBOARD)/auto.c option_table.h ./romcc"
+-	action	"./romcc    -mcpu=k8 -O2 -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/auto.c -o $@"
+-end
+-
+-##
+-## Build our 16 bit and 32 bit linuxBIOS entry code
+-##
+-mainboardinit cpu/x86/16bit/entry16.inc
+-mainboardinit cpu/x86/32bit/entry32.inc
+-ldscript /cpu/x86/16bit/entry16.lds
+-ldscript /cpu/x86/32bit/entry32.lds
+-
+-##
+-## Build our reset vector (This is where linuxBIOS is entered)
+-##
+-if USE_FALLBACK_IMAGE 
+-	mainboardinit cpu/x86/16bit/reset16.inc 
+-	ldscript /cpu/x86/16bit/reset16.lds 
+-else
+-	mainboardinit cpu/x86/32bit/reset32.inc 
+-	ldscript /cpu/x86/32bit/reset32.lds 
+-end
+-
+-### Should this be in the northbridge code?
+-mainboardinit arch/i386/lib/cpu_reset.inc
+-
+-##
+-## Include an id string (For safe flashing)
+-##
+-mainboardinit arch/i386/lib/id.inc
+-ldscript /arch/i386/lib/id.lds
+-
+-###
+-### This is the early phase of linuxBIOS startup 
+-### Things are delicate and we test to see if we should
+-### failover to another image.
+-###
+-if USE_FALLBACK_IMAGE
+-	ldscript /arch/i386/lib/failover.lds 
+-	mainboardinit ./failover.inc
+-end
+-
+-###
+-### O.k. We aren't just an intermediary anymore!
+-###
+-
+-##
+-## Setup RAM
+-##
+-mainboardinit cpu/x86/fpu/enable_fpu.inc
+-mainboardinit cpu/x86/mmx/enable_mmx.inc
+-mainboardinit cpu/x86/sse/enable_sse.inc
+-mainboardinit ./auto.inc
+-mainboardinit cpu/x86/sse/disable_sse.inc
+-mainboardinit cpu/x86/mmx/disable_mmx.inc
+-
+-##
+-## Include the secondary Configuration files 
+-##
+-dir /pc80
+-config chip.h
+-
+-chip northbridge/amd/amdk8/root_complex
+-	device pci_domain 0 on
+-		chip northbridge/amd/amdk8
+-			device pci 18.0 on #  northbridge 
+-				#  devices on link 0, link 0 == LDT 0 
+-				chip southbridge/amd/amd8131
+-					# the on/off keyword is mandatory
+-					device pci 0.0 on end
+-					device pci 0.1 on end
+-					device pci 1.0 on end
+-					device pci 1.1 on end
+-				end
+-				chip southbridge/amd/amd8111
+-					# this "device pci 0.0" is the parent the next one
+-					# PCI bridge
+-					device pci 0.0 on
+-						device pci 0.0 on end
+-						device pci 0.1 on end
+-						device pci 0.2 on end
+-						device pci 1.0 off end
+-					end
+-					device pci 1.0 on
+-						chip superio/winbond/w83627thf
+-							device pnp 2e.0 on end
+-							device pnp 2e.1 on end
+-							device pnp 2e.2 on end
+-							device pnp 2e.3 on end
+-							device pnp 2e.4 on end
+-							device pnp 2e.5 on end
+-							device pnp 2e.6 on end
+-							device pnp 2e.7 on end 
+-							device pnp 2e.8 on end 
+-							device pnp 2e.9 on end 
+-							device pnp 2e.a on end 
+-						end
+-					end
+-					device pci 1.1 on end
+-					device pci 1.2 on end
+-					device pci 1.3 on end 
+-					device pci 1.5 off end
+-					device pci 1.6 off end
+-				end
+-			end # LDT0
+-			device pci 18.0 on end # LDT1
+-			device pci 18.0 on end # LDT2
+-			device pci 18.1 on end
+-			device pci 18.2 on end
+-			device pci 18.3 on end
+-		end
+-		chip northbridge/amd/amdk8
+-			device pci 19.0 on end
+-			device pci 19.0 on end
+-			device pci 19.0 on end
+-			device pci 19.1 on end
+-			device pci 19.2 on end
+-			device pci 19.3 on end
+-		end
+-	end 
+-	device apic_cluster 0 on
+-		chip cpu/amd/socket_940
+-			device apic 0 on end
+-		end
+-		chip cpu/amd/socket_940
+-			device apic 1 on end
+-		end
+-	end
+-end
+-
+diff --git a/src/mainboard/iwill/DK8X/Options.lb b/src/mainboard/iwill/DK8X/Options.lb
+deleted file mode 100644
+index 6265e72fe1..0000000000
+--- a/src/mainboard/iwill/DK8X/Options.lb
++++ /dev/null
+@@ -1,214 +0,0 @@
+-uses HAVE_MP_TABLE
+-uses HAVE_PIRQ_TABLE
+-uses USE_FALLBACK_IMAGE
+-uses HAVE_FALLBACK_BOOT
+-uses HAVE_HARD_RESET
+-uses IRQ_SLOT_COUNT
+-uses HAVE_OPTION_TABLE
+-uses CONFIG_MAX_CPUS
+-uses CONFIG_MAX_PHYSICAL_CPUS
+-uses CONFIG_IOAPIC
+-uses CONFIG_SMP
+-uses FALLBACK_SIZE
+-uses ROM_SIZE
+-uses ROM_SECTION_SIZE
+-uses ROM_IMAGE_SIZE
+-uses ROM_SECTION_SIZE
+-uses ROM_SECTION_OFFSET
+-uses CONFIG_ROM_STREAM
+-uses CONFIG_ROM_STREAM_START
+-uses PAYLOAD_SIZE
+-uses _ROMBASE
+-uses XIP_ROM_SIZE
+-uses XIP_ROM_BASE
+-uses STACK_SIZE
+-uses HEAP_SIZE
+-uses USE_OPTION_TABLE
+-uses LB_CKS_RANGE_START
+-uses LB_CKS_RANGE_END
+-uses LB_CKS_LOC
+-uses MAINBOARD
+-uses MAINBOARD_PART_NUMBER
+-uses MAINBOARD_VENDOR
+-uses MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID
+-uses MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID
+-uses LINUXBIOS_EXTRA_VERSION
+-uses _RAMBASE
+-uses TTYS0_BAUD
+-uses TTYS0_BASE
+-uses TTYS0_LCS
+-uses DEFAULT_CONSOLE_LOGLEVEL
+-uses MAXIMUM_CONSOLE_LOGLEVEL
+-uses MAINBOARD_POWER_ON_AFTER_POWER_FAIL
+-uses CONFIG_CONSOLE_SERIAL8250
+-uses HAVE_INIT_TIMER
+-uses CONFIG_GDB_STUB
+-uses CROSS_COMPILE
+-uses CC
+-uses HOSTCC
+-uses OBJCOPY
+-
+-uses CONFIG_USE_INIT
+-
+-## ROM_SIZE is the size of boot ROM that this board will use.
+-default ROM_SIZE=524288
+-
+-###
+-### Build options
+-###
+-
+-##
+-## FALLBACK_SIZE is the amount of the ROM the complete fallback image will use
+-##
+-default FALLBACK_SIZE=131072
+-
+-##
+-## Build code for the fallback boot
+-##
+-default HAVE_FALLBACK_BOOT=1
+-
+-##
+-## Build code to reset the motherboard from linuxBIOS
+-##
+-default HAVE_HARD_RESET=1
+-
+-##
+-## Build code to export a programmable irq routing table
+-##
+-default HAVE_PIRQ_TABLE=1
+-default IRQ_SLOT_COUNT=9
+-
+-##
+-## Build code to export an x86 MP table
+-## Useful for specifying IRQ routing values
+-##
+-default HAVE_MP_TABLE=1
+-
+-##
+-## Build code to export a CMOS option table
+-##
+-default HAVE_OPTION_TABLE=1
+-
+-##
+-## Move the default LinuxBIOS cmos range off of AMD RTC registers
+-##
+-default LB_CKS_RANGE_START=49
+-default LB_CKS_RANGE_END=122
+-default LB_CKS_LOC=123
+-
+-##
+-## Build code for SMP support
+-## Only worry about 2 micro processors
+-##
+-default CONFIG_SMP=1
+-default CONFIG_MAX_CPUS=2
+-default CONFIG_MAX_PHYSICAL_CPUS=2
+-
+-##
+-## Build code to setup a generic IOAPIC
+-##
+-default CONFIG_IOAPIC=1
+-
+-##
+-## Clean up the motherboard id strings
+-##
+-#default MAINBOARD_PART_NUMBER="HDAMA"
+-#default MAINBOARD_VENDOR="ARIMA"
+-#default MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID=0x161f
+-#default MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID=0x3016
+-
+-###
+-### LinuxBIOS layout values
+-###
+-
+-## ROM_IMAGE_SIZE is the amount of space to allow linuxBIOS to occupy.
+-default ROM_IMAGE_SIZE = 65536
+-
+-##
+-## Use a small 8K stack
+-##
+-default STACK_SIZE=0x2000
+-
+-##
+-## Use a small 16K heap
+-##
+-default HEAP_SIZE=0x4000
+-
+-##
+-## Only use the option table in a normal image
+-##
+-default USE_OPTION_TABLE = !USE_FALLBACK_IMAGE
+-
+-##
+-## LinuxBIOS C code runs at this location in RAM
+-##
+-default _RAMBASE=0x00004000
+-
+-##
+-## Load the payload from the ROM
+-##
+-default CONFIG_ROM_STREAM = 1
+-
+-###
+-### Defaults of options that you may want to override in the target config file
+-### 
+-
+-##
+-## The default compiler
+-##
+-#default CC="$(CROSS_COMPILE)gcc -m32"
+-#default HOSTCC="gcc"
+-
+-##
+-## Disable the gdb stub by default
+-##
+-default CONFIG_GDB_STUB=0
+-
+-##
+-## The Serial Console
+-##
+-
+-# To Enable the Serial Console
+-default CONFIG_CONSOLE_SERIAL8250=1
+-
+-## Select the serial console baud rate
+-default TTYS0_BAUD=115200
+-#default TTYS0_BAUD=57600
+-#default TTYS0_BAUD=38400
+-#default TTYS0_BAUD=19200
+-#default TTYS0_BAUD=9600
+-#default TTYS0_BAUD=4800
+-#default TTYS0_BAUD=2400
+-#default TTYS0_BAUD=1200
+-
+-# Select the serial console base port
+-default TTYS0_BASE=0x3f8
+-
+-# Select the serial protocol
+-# This defaults to 8 data bits, 1 stop bit, and no parity
+-default TTYS0_LCS=0x3
+-
+-##
+-### Select the linuxBIOS loglevel
+-##
+-## EMERG      1   system is unusable               
+-## ALERT      2   action must be taken immediately 
+-## CRIT       3   critical conditions              
+-## ERR        4   error conditions                 
+-## WARNING    5   warning conditions               
+-## NOTICE     6   normal but significant condition 
+-## INFO       7   informational                    
+-## DEBUG      8   debug-level messages             
+-## SPEW       9   Way too many details             
+-
+-## Request this level of debugging output
+-default  DEFAULT_CONSOLE_LOGLEVEL=8
+-## At a maximum only compile in this level of debugging
+-default  MAXIMUM_CONSOLE_LOGLEVEL=8
+-
+-##
+-## Select power on after power fail setting
+-default MAINBOARD_POWER_ON_AFTER_POWER_FAIL="MAINBOARD_POWER_ON"
+-
+-### End Options.lb
+-end
+diff --git a/src/mainboard/iwill/DK8X/auto.c b/src/mainboard/iwill/DK8X/auto.c
+deleted file mode 100644
+index 52dfb87074..0000000000
+--- a/src/mainboard/iwill/DK8X/auto.c
++++ /dev/null
+@@ -1,232 +0,0 @@
+-#define ASSEMBLY 1
+-#include <stdint.h>
+-#include <device/pci_def.h>
+-#include <arch/io.h>
+-#include <device/pnp_def.h>
+-#include <arch/romcc_io.h>
+-#include <cpu/x86/lapic.h>
+-#include <arch/cpu.h>
+-#include "option_table.h"
+-#include "pc80/mc146818rtc_early.c"
+-#include "pc80/serial.c"
+-#include "arch/i386/lib/console.c"
+-#include "ram/ramtest.c"
+-#include "southbridge/amd/amd8111/amd8111_early_smbus.c"
+-#include "northbridge/amd/amdk8/raminit.h"
+-#include "cpu/amd/model_fxx/apic_timer.c"
+-#include "lib/delay.c"
+-#include "cpu/x86/lapic/boot_cpu.c"
+-#include "northbridge/amd/amdk8/reset_test.c"
+-#include "northbridge/amd/amdk8/debug.c"
+-#include <cpu/amd/model_fxx_rev.h>
+-
+-#include "superio/NSC/pc87360/pc87360_early_serial.c"
+-#include "cpu/amd/mtrr/amd_earlymtrr.c"
+-#include "cpu/x86/bist.h"
+-
+-#define SERIAL_DEV PNP_DEV(0x2e, PC87360_SP1)
+-
+-static void hard_reset(void)
+-{
+-	set_bios_reset();
+-
+-	/* enable cf9 */
+-	pci_write_config8(PCI_DEV(0, 0x04, 3), 0x41, 0xf1);
+-	/* reset */
+-	outb(0x0e, 0x0cf9);
+-}
+-
+-static void soft_reset(void)
+-{
+-	set_bios_reset();
+-	pci_write_config8(PCI_DEV(0, 0x04, 0), 0x47, 1);
+-}
+-
+-/*
+- * GPIO28 of 8111 will control H0_MEMRESET_L
+- * GPIO29 of 8111 will control H1_MEMRESET_L
+- */
+-static void memreset_setup(void)
+-{
+-	if (is_cpu_pre_c0()) {
+-		/* Set the memreset low */
+-		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(0<<0), SMBUS_IO_BASE + 0xc0 + 28);
+-		/* Ensure the BIOS has control of the memory lines */
+-		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(0<<0), SMBUS_IO_BASE + 0xc0 + 29);
+-	}
+-	else {
+-		/* Ensure the CPU has controll of the memory lines */
+-		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(1<<0), SMBUS_IO_BASE + 0xc0 + 29);
+-	}
+-}
+-
+-static void memreset(int controllers, const struct mem_controller *ctrl)
+-{
+-	if (is_cpu_pre_c0()) {
+-		udelay(800);
+-		/* Set memreset_high */
+-		outb((0<<7)|(0<<6)|(0<<5)|(0<<4)|(1<<2)|(1<<0), SMBUS_IO_BASE + 0xc0 + 28);
+-		udelay(90);
+-	}
+-}
+-
+-static unsigned int generate_row(uint8_t node, uint8_t row, uint8_t maxnodes)
+-{
+-	/* Routing Table Node i 
+-	 *
+-	 * F0: 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58, 0x5c 
+-	 *  i:    0,    1,    2,    3,    4,    5,    6,    7
+-	 *
+-	 * [ 0: 3] Request Route
+-	 *     [0] Route to this node
+-	 *     [1] Route to Link 0
+-	 *     [2] Route to Link 1
+-	 *     [3] Route to Link 2
+-	 * [11: 8] Response Route
+-	 *     [0] Route to this node
+-	 *     [1] Route to Link 0
+-	 *     [2] Route to Link 1
+-	 *     [3] Route to Link 2
+-	 * [19:16] Broadcast route
+-	 *     [0] Route to this node
+-	 *     [1] Route to Link 0
+-	 *     [2] Route to Link 1
+-	 *     [3] Route to Link 2
+-	 */
+-
+-	uint32_t ret=0x00010101; /* default row entry */
+-
+-	static const unsigned int rows_2p[2][2] = {
+-		{ 0x00050101, 0x00010404 },
+-		{ 0x00010404, 0x00050101 }
+-	};
+-
+-	if(maxnodes>2) {
+-		print_debug("this mainboard is only designed for 2 cpus\r\n");
+-		maxnodes=2;
+-	}
+-
+-
+-	if (!(node>=maxnodes || row>=maxnodes)) {
+-		ret=rows_2p[node][row];
+-	}
+-
+-	return ret;
+-}
+-
+-static inline void activate_spd_rom(const struct mem_controller *ctrl)
+-{
+-	/* nothing to do */
+-}
+-
+-static inline int spd_read_byte(unsigned device, unsigned address)
+-{
+-	return smbus_read_byte(device, address);
+-}
+-
+-#include "northbridge/amd/amdk8/raminit.c"
+-#include "northbridge/amd/amdk8/coherent_ht.c"
+-#include "northbridge/amd/amdk8/incoherent_ht.c"
+-#include "sdram/generic_sdram.c"
+-#include "northbridge/amd/amdk8/resourcemap.c"
+-#include "cpu/amd/dualcore/dualcore.c"
+-
+-#define FIRST_CPU  1
+-#define SECOND_CPU 1
+-#define TOTAL_CPUS (FIRST_CPU + SECOND_CPU)
+-static void main(unsigned long bist)
+-{
+-	static const struct mem_controller cpu[] = {
+-#if FIRST_CPU
+-		{
+-			.node_id = 0,
+-			.f0 = PCI_DEV(0, 0x18, 0),
+-			.f1 = PCI_DEV(0, 0x18, 1),
+-			.f2 = PCI_DEV(0, 0x18, 2),
+-			.f3 = PCI_DEV(0, 0x18, 3),
+-			.channel0 = { (0xa<<3)|0, (0xa<<3)|2, 0, 0 },
+-			.channel1 = { (0xa<<3)|1, (0xa<<3)|3, 0, 0 },
+-		},
+-#endif
+-#if SECOND_CPU
+-		{
+-			.node_id = 1,
+-			.f0 = PCI_DEV(0, 0x19, 0),
+-			.f1 = PCI_DEV(0, 0x19, 1),
+-			.f2 = PCI_DEV(0, 0x19, 2),
+-			.f3 = PCI_DEV(0, 0x19, 3),
+-			.channel0 = { (0xa<<3)|4, (0xa<<3)|6, 0, 0 },
+-			.channel1 = { (0xa<<3)|5, (0xa<<3)|7, 0, 0 },
+-		},
+-#endif
+-	};
+-
+-	int needs_reset;
+-        unsigned nodeid;
+-
+-	if (bist == 0) {
+-	    	k8_init_and_stop_secondaries();
+-	}
+-	/* Setup the console */
+-	pc87360_enable_serial(SERIAL_DEV, TTYS0_BASE);
+-	uart_init();
+-	console_init();
+-
+-	/* Halt if there was a built in self test failure */
+-	report_bist_failure(bist);
+-
+-	setup_default_resource_map();
+-	needs_reset = setup_coherent_ht_domain();
+-	needs_reset |= ht_setup_chain(PCI_DEV(0, 0x18, 0), 0x80);
+-	if (needs_reset) {
+-		print_info("ht reset -\r\n");
+-		soft_reset();
+-	}
+-
+-#if 0
+-	print_pci_devices();
+-#endif
+-	enable_smbus();
+-#if 0
+-	dump_spd_registers(&cpu[0]);
+-#endif
+-
+-	memreset_setup();
+-	sdram_initialize(sizeof(cpu)/sizeof(cpu[0]), cpu);
+-
+-#if 1
+-	dump_pci_devices();
+-#endif
+-#if 0
+-	dump_pci_device(PCI_DEV(0, 0x18, 2));
+-#endif
+-
+-	/* Check all of memory */
+-#if 0
+-	msr_t msr;
+-	msr = rdmsr(TOP_MEM);
+-	print_debug("TOP_MEM: ");
+-	print_debug_hex32(msr.hi);
+-	print_debug_hex32(msr.lo);
+-	print_debug("\r\n");
+-#endif
+-#if 0
+-	ram_check(0x00000000, msr.lo);
+-#endif
+-#if 0
+-	static const struct {
+-		unsigned long lo, hi;
+-	} check_addrs[] = {
+-		/* Check 16MB of memory @ 0*/
+-		{ 0x00000000, 0x01000000 },
+-#if TOTAL_CPUS > 1
+-		/* Check 16MB of memory @ 2GB */
+-		{ 0x80000000, 0x81000000 },
+-#endif
+-	};
+-	int i;
+-	for(i = 0; i < sizeof(check_addrs)/sizeof(check_addrs[0]); i++) {
+-		ram_check(check_addrs[i].lo, check_addrs[i].hi);
+-	}
+-#endif
+-}
+diff --git a/src/mainboard/iwill/DK8X/chip.h b/src/mainboard/iwill/DK8X/chip.h
+deleted file mode 100644
+index 7710024cca..0000000000
+--- a/src/mainboard/iwill/DK8X/chip.h
++++ /dev/null
+@@ -1,5 +0,0 @@
+-extern struct chip_operations mainboard_Iwill_DK8X_ops;
+-
+-struct mainboard_Iwill_DK8X_config {
+-	int nothing;
+-};
+diff --git a/src/mainboard/iwill/DK8X/cmos.layout b/src/mainboard/iwill/DK8X/cmos.layout
+deleted file mode 100644
+index 5eb88b9a5a..0000000000
+--- a/src/mainboard/iwill/DK8X/cmos.layout
++++ /dev/null
+@@ -1,98 +0,0 @@
+-entries
+-
+-#start-bit length  config config-ID    name
+-#0            8       r       0        seconds
+-#8            8       r       0        alarm_seconds
+-#16           8       r       0        minutes
+-#24           8       r       0        alarm_minutes
+-#32           8       r       0        hours
+-#40           8       r       0        alarm_hours
+-#48           8       r       0        day_of_week
+-#56           8       r       0        day_of_month
+-#64           8       r       0        month
+-#72           8       r       0        year
+-#80           4       r       0        rate_select
+-#84           3       r       0        REF_Clock
+-#87           1       r       0        UIP
+-#88           1       r       0        auto_switch_DST
+-#89           1       r       0        24_hour_mode
+-#90           1       r       0        binary_values_enable
+-#91           1       r       0        square-wave_out_enable
+-#92           1       r       0        update_finished_enable
+-#93           1       r       0        alarm_interrupt_enable
+-#94           1       r       0        periodic_interrupt_enable
+-#95           1       r       0        disable_clock_updates
+-#96         288       r       0        temporary_filler
+-0          384       r       0        reserved_memory
+-384          1       e       4        boot_option
+-385          1       e       4        last_boot
+-386          1       e       1        ECC_memory
+-388          4       r       0        reboot_bits
+-392          3       e       5        baud_rate
+-395          1       e       1        hw_scrubber
+-396          1       e       1        interleave_chip_selects
+-397          2       e       8        max_mem_clock
+-399	     1	     e	     2	      dual_core
+-400          1       e       1        power_on_after_fail
+-412          4       e       6        debug_level
+-416          4       e       7        boot_first
+-420          4       e       7        boot_second
+-424          4       e       7        boot_third
+-428          4       h       0        boot_index
+-432	     8       h       0        boot_countdown
+-440          4       e       9        slow_cpu
+-444          1       e       1        nmi
+-445          1       e       1        iommu
+-728        256       h       0        user_data
+-984         16       h       0        check_sum
+-# Reserve the extended AMD configuration registers
+-1000        24       r       0        reserved_memory
+-
+-
+-
+-enumerations
+-
+-#ID value   text
+-1     0     Disable
+-1     1     Enable
+-2     0     Enable
+-2     1     Disable
+-4     0     Fallback
+-4     1     Normal
+-5     0     115200
+-5     1     57600
+-5     2     38400
+-5     3     19200
+-5     4     9600
+-5     5     4800
+-5     6     2400
+-5     7     1200
+-6     6     Notice
+-6     7     Info
+-6     8     Debug
+-6     9     Spew
+-7     0     Network
+-7     1     HDD
+-7     2     Floppy
+-7     8     Fallback_Network
+-7     9     Fallback_HDD
+-7     10    Fallback_Floppy
+-#7     3     ROM
+-8     0     DDR400
+-8     1     DDR333
+-8     2     DDR266
+-8     3     DDR200
+-9     0     off
+-9     1     87.5%
+-9     2     75.0%
+-9     3     62.5%
+-9     4     50.0%
+-9     5     37.5%
+-9     6     25.0%
+-9     7     12.5%
+-
+-checksums
+-
+-checksum 392 983 984
+-
+-
+diff --git a/src/mainboard/iwill/DK8X/failover.c b/src/mainboard/iwill/DK8X/failover.c
+deleted file mode 100644
+index 262fdd60bd..0000000000
+--- a/src/mainboard/iwill/DK8X/failover.c
++++ /dev/null
+@@ -1,66 +0,0 @@
+-#define ASSEMBLY 1
+-#include <stdint.h>
+-#include <device/pci_def.h>
+-#include <device/pci_ids.h>
+-#include <arch/io.h>
+-#include <arch/romcc_io.h>
+-#include <cpu/x86/lapic.h>
+-#include "pc80/mc146818rtc_early.c"
+-#include "southbridge/amd/amd8111/amd8111_enable_rom.c"
+-#include "northbridge/amd/amdk8/early_ht.c"
+-#include "cpu/x86/lapic/boot_cpu.c"
+-#include "cpu/x86/mtrr/earlymtrr.c"
+-#include "northbridge/amd/amdk8/reset_test.c"
+-
+-static unsigned long main(unsigned long bist)
+-{
+-        unsigned nodeid;
+-
+-	/* Make cerain my local apic is useable */
+-	enable_lapic();
+-
+-	/* Is this a cpu only reset? */
+-	if (early_mtrr_init_detected()) {
+-		if (last_boot_normal()) {
+-			goto normal_image;
+-		} else {
+-			goto fallback_image;
+-		}
+-	}
+-	/* Is this a secondary cpu? */
+-	if (!boot_cpu()) {
+-		if (last_boot_normal()) {
+-			goto normal_image;
+-		} else {
+-			goto fallback_image;
+-		}
+-	}
+-	
+-
+-	/* Nothing special needs to be done to find bus 0 */
+-	/* Allow the HT devices to be found */
+-	enumerate_ht_chain();
+-	
+-	/* Setup the 8111 */
+-	amd8111_enable_rom();
+-
+-	/* Is this a deliberate reset by the bios */
+-	if (bios_reset_detected() && last_boot_normal()) {
+-		goto normal_image;
+-	}
+-	/* This is the primary cpu how should I boot? */
+-	else if (do_normal_boot()) {
+-		goto normal_image;
+-	}
+-	else {
+-		goto fallback_image;
+-	}
+- normal_image:
+-	asm volatile ("jmp __normal_image" 
+-		: /* outputs */ 
+-		: "a" (bist) /* inputs */
+-		: /* clobbers */
+-		);
+- fallback_image:
+-	return bist;
+-}
+diff --git a/src/mainboard/iwill/DK8X/irq_tables.c b/src/mainboard/iwill/DK8X/irq_tables.c
+deleted file mode 100644
+index 6322c3df21..0000000000
+--- a/src/mainboard/iwill/DK8X/irq_tables.c
++++ /dev/null
+@@ -1,56 +0,0 @@
+-#include <arch/pirq_routing.h>
+-#include <device/pci.h>
+-
+-#define IRQ_ROUTER_BUS		1
+-#define IRQ_ROUTER_DEVFN	PCI_DEVFN(4,3)
+-#define IRQ_ROUTER_VENDOR	0x1022
+-#define IRQ_ROUTER_DEVICE	0x746b
+-
+-#define AVAILABLE_IRQS 0xdef8
+-#define IRQ_SLOT(slot, bus, dev, fn, linka, linkb, linkc, linkd) \
+-	{ bus, (dev<<3)|fn, {{ linka, AVAILABLE_IRQS}, { linkb, AVAILABLE_IRQS}, \
+-	{linkc, AVAILABLE_IRQS}, {linkd, AVAILABLE_IRQS}}, slot, 0}
+-
+-/*  Each IRQ_SLOT entry consists of:
+- *  bus, devfn, {link, bitmap}, {link, bitmap}, {link, bitmap}, {link, bitmap}, slot, rfu  
+- */
+-
+-const struct irq_routing_table intel_irq_routing_table = {
+-	PIRQ_SIGNATURE,		/* u32 signature */
+-	PIRQ_VERSION,		/* u16 version   */
+-	32+16*IRQ_SLOT_COUNT,	/* there can be total IRQ_SLOT_COUNT 
+-				 * devices on the bus */
+-	IRQ_ROUTER_BUS,		/* Where the interrupt router lies (bus) */
+-	IRQ_ROUTER_DEVFN,	/* Where the interrupt router lies (dev) */
+-	0x00,			/* IRQs devoted exclusively to PCI usage */
+-	IRQ_ROUTER_VENDOR,	/* Vendor */
+-	IRQ_ROUTER_DEVICE,	/* Device */
+-	0x00,			/* Crap (miniport) */
+-	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },	/* u8 rfu[11] */
+-	0x00,			/*  u8 checksum , mod 256 checksum must give
+-				 *  zero, will be corrected later 
+-				 */
+-	{
+-
+-		/* slot(0=onboard), devfn, irqlinks (line id, 0=not routed) */
+-
+-		/* PCI Slot 1-6 */
+-		IRQ_SLOT (1, 3,1,0, 2,3,4,1 ),
+-		IRQ_SLOT (2, 3,2,0, 3,4,1,2 ),
+-		IRQ_SLOT (3, 2,1,0, 2,3,4,1 ),
+-		IRQ_SLOT (4, 2,2,0, 3,4,1,2 ),
+-		IRQ_SLOT (5, 4,5,0, 2,3,4,1 ),
+-		IRQ_SLOT (6, 4,4,0, 1,2,3,4 ),
+-
+-		/* Onboard NICs */
+-		IRQ_SLOT (0, 2,3,0, 4,0,0,0 ),
+-		IRQ_SLOT (0, 2,4,0, 4,0,0,0 ),
+-
+-		/* Let Linux know about bus 1 */
+-		IRQ_SLOT (0, 1,4,3, 0,0,0,0 ),
+-	}
+-};
+-unsigned long write_pirq_routing_table(unsigned long addr)
+-{
+-        return copy_pirq_routing_table(addr);
+-}
+diff --git a/src/mainboard/iwill/DK8X/mainboard.c b/src/mainboard/iwill/DK8X/mainboard.c
+deleted file mode 100644
+index a1b05d0943..0000000000
+--- a/src/mainboard/iwill/DK8X/mainboard.c
++++ /dev/null
+@@ -1,11 +0,0 @@
+-#include <console/console.h>
+-#include <device/device.h>
+-#include <device/pci.h>
+-#include <device/pci_ids.h>
+-#include <device/pci_ops.h>
+-#include "chip.h"
+-
+-struct chip_operations mainboard_Iwill_DK8X_ops = {
+-	CHIP_NAME("Iwill DK8X mainboard")
+-};
+-
+diff --git a/src/mainboard/iwill/DK8X/mptable.c b/src/mainboard/iwill/DK8X/mptable.c
+deleted file mode 100644
+index 34e6037c21..0000000000
+--- a/src/mainboard/iwill/DK8X/mptable.c
++++ /dev/null
+@@ -1,232 +0,0 @@
+-#include <console/console.h>
+-#include <arch/smp/mpspec.h>
+-#include <device/pci.h>
+-#include <string.h>
+-#include <stdint.h>
+-
+-void *smp_write_config_table(void *v)
+-{
+-	static const char sig[4] = "PCMP";
+-	static const char oem[8] = "IWILL   ";
+-	static const char productid[12] = "DK8X        ";
+-	struct mp_config_table *mc;
+-	unsigned char bus_num;
+-	unsigned char bus_isa;
+-	unsigned char bus_8131_1;
+-	unsigned char bus_8131_2;
+-	unsigned char bus_8111_1;
+-
+-	mc = (void *)(((char *)v) + SMP_FLOATING_TABLE_LEN);
+-	memset(mc, 0, sizeof(*mc));
+-
+-	memcpy(mc->mpc_signature, sig, sizeof(sig));
+-	mc->mpc_length = sizeof(*mc); /* initially just the header */
+-	mc->mpc_spec = 0x04;
+-	mc->mpc_checksum = 0; /* not yet computed */
+-	memcpy(mc->mpc_oem, oem, sizeof(oem));
+-	memcpy(mc->mpc_productid, productid, sizeof(productid));
+-	mc->mpc_oemptr = 0;
+-	mc->mpc_oemsize = 0;
+-	mc->mpc_entry_count = 0; /* No entries yet... */
+-	mc->mpc_lapic = LAPIC_ADDR;
+-	mc->mpe_length = 0;
+-	mc->mpe_checksum = 0;
+-	mc->reserved = 0;
+-
+-	smp_write_processors(mc);
+-
+-	{
+-		device_t dev;
+-
+-		/* 8111 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x03,0));
+-		if (dev) {
+-			bus_8111_1 = pci_read_config8(dev, PCI_SECONDARY_BUS);
+-			bus_isa	   = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+-			bus_isa++;
+-		}
+-		else {
+-			printk_debug("ERROR - could not find PCI 1:03.0, using defaults\n");
+-
+-			bus_8111_1 = 4;
+-			bus_isa = 5;
+-		}
+-		/* 8131-1 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x01,0));
+-		if (dev) {
+-			bus_8131_1 = pci_read_config8(dev, PCI_SECONDARY_BUS);
+-
+-		}
+-		else {
+-			printk_debug("ERROR - could not find PCI 1:01.0, using defaults\n");
+-
+-			bus_8131_1 = 2;
+-		}
+-		/* 8131-2 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x02,0));
+-		if (dev) {
+-			bus_8131_2 = pci_read_config8(dev, PCI_SECONDARY_BUS);
+-
+-		}
+-		else {
+-			printk_debug("ERROR - could not find PCI 1:02.0, using defaults\n");
+-
+-			bus_8131_2 = 3;
+-		}
+-	}
+-
+-	/* define bus and isa numbers */
+-	for(bus_num = 0; bus_num < bus_isa; bus_num++) {
+-		smp_write_bus(mc, bus_num, "PCI	  ");
+-	}
+-	smp_write_bus(mc, bus_isa, "ISA	  ");
+-
+-	/* IOAPIC handling */
+-	smp_write_ioapic(mc, 2, 0x11, 0xfec00000);
+-	{
+-		device_t dev;
+-		struct resource *res;
+-		/* 8131 apic 3 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x01,1));
+-		if (dev) {
+-			res = find_resource(dev, PCI_BASE_ADDRESS_0);
+-			if (res) {
+-				smp_write_ioapic(mc, 0x03, 0x11, res->base);
+-			}
+-		}
+-		/* 8131 apic 4 */
+-		dev = dev_find_slot(1, PCI_DEVFN(0x02,1));
+-		if (dev) {
+-			res = find_resource(dev, PCI_BASE_ADDRESS_0);
+-			if (res) {
+-				smp_write_ioapic(mc, 0x04, 0x11, res->base);
+-			}
+-		}
+-	}
+-
+-	/* ISA backward compatibility interrupts  */
+-	smp_write_intsrc(mc, mp_ExtINT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x00, 0x02, 0x00);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x01, 0x02, 0x01);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x00, 0x02, 0x02);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x03, 0x02, 0x03);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x04, 0x02, 0x04);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x05, 0x02, 0x05);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x06, 0x02, 0x06);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x07, 0x02, 0x07);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x08, 0x02, 0x08);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x09, 0x02, 0x09);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0a, 0x02, 0x0a);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0b, 0x02, 0x0b);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0c, 0x02, 0x0c);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0d, 0x02, 0x0d);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0e, 0x02, 0x0e);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x0f, 0x02, 0x0f);
+-
+-	/* Standard local interrupt assignments */
+-	smp_write_lintsrc(mc, mp_ExtINT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x00, MP_APIC_ALL, 0x00);
+-	smp_write_lintsrc(mc, mp_NMI, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_isa, 0x00, MP_APIC_ALL, 0x01);
+-
+-
+-	/* PCI Slot 1 */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (1<<2)|0, 0x02, 0x11);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (1<<2)|1, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (1<<2)|2, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (1<<2)|3, 0x02, 0x10);
+-
+-	/* PCI Slot 2 */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (2<<2)|0, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (2<<2)|1, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (2<<2)|2, 0x02, 0x10);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_2, (2<<2)|3, 0x02, 0x11);
+-
+-	/* PCI Slot 3 */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (1<<2)|0, 0x02, 0x11);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (1<<2)|1, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (1<<2)|2, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (1<<2)|3, 0x02, 0x10);
+-
+-	/* PCI Slot 4 */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (2<<2)|0, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (2<<2)|1, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (2<<2)|2, 0x02, 0x10);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (2<<2)|3, 0x02, 0x11);
+-
+-	/* PCI Slot 5 */
+-#warning "FIXME get the irqs right, it's just hacked to work for now"
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (5<<2)|0, 0x02, 0x11);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (5<<2)|1, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (5<<2)|2, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (5<<2)|3, 0x02, 0x10);
+-
+-	/* PCI Slot 6 */
+-#warning "FIXME get the irqs right, it's just hacked to work for now"
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (4<<2)|0, 0x02, 0x10);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (4<<2)|1, 0x02, 0x11);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (4<<2)|2, 0x02, 0x12);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8111_1, (4<<2)|3, 0x02, 0x13);
+-
+-	/* On board nics */
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (3<<2)|0, 0x02, 0x13);
+-	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
+-		bus_8131_1, (4<<2)|0, 0x02, 0x13);
+-
+-	/* There is no extension information... */
+-
+-	/* Compute the checksums */
+-	mc->mpe_checksum = smp_compute_checksum(smp_next_mpc_entry(mc), mc->mpe_length);
+-	mc->mpc_checksum = smp_compute_checksum(mc, mc->mpc_length);
+-	printk_debug("Wrote the mp table end at: %p - %p\n",
+-		mc, smp_next_mpe_entry(mc));
+-	return smp_next_mpe_entry(mc);
+-}
+-
+-unsigned long write_smp_table(unsigned long addr)
+-{
+-	void *v;
+-	v = smp_write_floating_table(addr);
+-	return (unsigned long)smp_write_config_table(v);
+-}
+-
+diff --git a/src/mainboard/iwill/DK8X/reset.c b/src/mainboard/iwill/DK8X/reset.c
+deleted file mode 100644
+index 3db3956ec6..0000000000
+--- a/src/mainboard/iwill/DK8X/reset.c
++++ /dev/null
+@@ -1,6 +0,0 @@
+-#include "../../../southbridge/amd/amd8111/amd8111_reset.c"
+-
+-void hard_reset(void)
+-{
+-	amd8111_hard_reset(0, 0);
+-}
+diff --git a/src/mainboard/iwill/dk8X/Config.lb b/src/mainboard/iwill/dk8X/Config.lb
+new file mode 100644
+index 0000000000..a7ae47449d
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/Config.lb
+@@ -0,0 +1,197 @@
++##
++## Compute the location and size of where this firmware image
++## (linuxBIOS plus bootloader) will live in the boot rom chip.
++##
++if USE_FALLBACK_IMAGE
++	default ROM_SECTION_SIZE   = FALLBACK_SIZE
++	default ROM_SECTION_OFFSET = ( ROM_SIZE - FALLBACK_SIZE )
++else
++	default ROM_SECTION_SIZE   = ( ROM_SIZE - FALLBACK_SIZE )
++	default ROM_SECTION_OFFSET = 0
++end
++
++##
++## Compute the start location and size size of
++## The linuxBIOS bootloader.
++##
++default PAYLOAD_SIZE            = ( ROM_SECTION_SIZE - ROM_IMAGE_SIZE )
++default CONFIG_ROM_STREAM_START = (0xffffffff - ROM_SIZE + ROM_SECTION_OFFSET + 1)
++
++##
++## Compute where this copy of linuxBIOS will start in the boot rom
++##
++default _ROMBASE      = ( CONFIG_ROM_STREAM_START + PAYLOAD_SIZE )
++
++##
++## Compute a range of ROM that can cached to speed up linuxBIOS,
++## execution speed.
++##
++## XIP_ROM_SIZE must be a power of 2.
++## XIP_ROM_BASE must be a multiple of XIP_ROM_SIZE
++##
++default XIP_ROM_SIZE=65536
++default XIP_ROM_BASE = ( _ROMBASE + ROM_IMAGE_SIZE - XIP_ROM_SIZE )
++
++##
++## Set all of the defaults for an x86 architecture
++##
++
++arch i386 end
++
++##
++## Build the objects we have code for in this directory.
++##
++
++driver mainboard.o
++if HAVE_MP_TABLE object mptable.o end
++if HAVE_PIRQ_TABLE object irq_tables.o end
++#object reset.o
++
++##
++## Romcc output
++##
++makerule ./failover.E
++	depends "$(MAINBOARD)/failover.c ./romcc" 
++	action "./romcc -E -O --label-prefix=failover -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/failover.c -o $@"
++end
++
++makerule ./failover.inc
++	depends "$(MAINBOARD)/failover.c ./romcc"
++	action "./romcc    -O --label-prefix=failover -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/failover.c -o $@"
++end
++
++makerule ./auto.E 
++	depends	"$(MAINBOARD)/auto.c option_table.h ./romcc" 
++	action	"./romcc -E -mcpu=k8 -O2 -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/auto.c -o $@"
++end
++makerule ./auto.inc 
++	depends "$(MAINBOARD)/auto.c option_table.h ./romcc"
++	action	"./romcc    -mcpu=k8 -O2 -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/auto.c -o $@"
++end
++
++##
++## Build our 16 bit and 32 bit linuxBIOS entry code
++##
++mainboardinit cpu/x86/16bit/entry16.inc
++mainboardinit cpu/x86/32bit/entry32.inc
++ldscript /cpu/x86/16bit/entry16.lds
++ldscript /cpu/x86/32bit/entry32.lds
++
++##
++## Build our reset vector (This is where linuxBIOS is entered)
++##
++if USE_FALLBACK_IMAGE 
++	mainboardinit cpu/x86/16bit/reset16.inc 
++	ldscript /cpu/x86/16bit/reset16.lds 
++else
++	mainboardinit cpu/x86/32bit/reset32.inc 
++	ldscript /cpu/x86/32bit/reset32.lds 
++end
++
++### Should this be in the northbridge code?
++mainboardinit arch/i386/lib/cpu_reset.inc
++
++##
++## Include an id string (For safe flashing)
++##
++mainboardinit arch/i386/lib/id.inc
++ldscript /arch/i386/lib/id.lds
++
++###
++### This is the early phase of linuxBIOS startup 
++### Things are delicate and we test to see if we should
++### failover to another image.
++###
++if USE_FALLBACK_IMAGE
++	ldscript /arch/i386/lib/failover.lds 
++	mainboardinit ./failover.inc
++end
++
++###
++### O.k. We aren't just an intermediary anymore!
++###
++
++##
++## Setup RAM
++##
++mainboardinit cpu/x86/fpu/enable_fpu.inc
++mainboardinit cpu/x86/mmx/enable_mmx.inc
++mainboardinit cpu/x86/sse/enable_sse.inc
++mainboardinit ./auto.inc
++mainboardinit cpu/x86/sse/disable_sse.inc
++mainboardinit cpu/x86/mmx/disable_mmx.inc
++
++##
++## Include the secondary Configuration files 
++##
++dir /pc80
++config chip.h
++
++chip northbridge/amd/amdk8/root_complex
++	device pci_domain 0 on
++		chip northbridge/amd/amdk8
++			device pci 18.0 on #  northbridge 
++				#  devices on link 0, link 0 == LDT 0 
++				chip southbridge/amd/amd8131
++					# the on/off keyword is mandatory
++					device pci 0.0 on end
++					device pci 0.1 on end
++					device pci 1.0 on end
++					device pci 1.1 on end
++				end
++				chip southbridge/amd/amd8111
++					# this "device pci 0.0" is the parent the next one
++					# PCI bridge
++					device pci 0.0 on
++						device pci 0.0 on end
++						device pci 0.1 on end
++						device pci 0.2 on end
++						device pci 1.0 off end
++					end
++					device pci 1.0 on
++						chip superio/winbond/w83627thf
++							device pnp 2e.0 on end
++							device pnp 2e.1 on end
++							device pnp 2e.2 on end
++							device pnp 2e.3 on end
++							device pnp 2e.4 on end
++							device pnp 2e.5 on end
++							device pnp 2e.6 on end
++							device pnp 2e.7 on end 
++							device pnp 2e.8 on end 
++							device pnp 2e.9 on end 
++							device pnp 2e.a on end 
++						end
++					end
++					device pci 1.1 on end
++					device pci 1.2 on end
++					device pci 1.3 on end 
++					device pci 1.5 off end
++					device pci 1.6 off end
++				end
++			end # LDT0
++			device pci 18.0 on end # LDT1
++			device pci 18.0 on end # LDT2
++			device pci 18.1 on end
++			device pci 18.2 on end
++			device pci 18.3 on end
++		end
++		chip northbridge/amd/amdk8
++			device pci 19.0 on end
++			device pci 19.0 on end
++			device pci 19.0 on end
++			device pci 19.1 on end
++			device pci 19.2 on end
++			device pci 19.3 on end
++		end
++	end 
++	device apic_cluster 0 on
++		chip cpu/amd/socket_940
++			device apic 0 on end
++		end
++		chip cpu/amd/socket_940
++			device apic 1 on end
++		end
++	end
++end
++
+diff --git a/src/mainboard/iwill/dk8X/Options.lb b/src/mainboard/iwill/dk8X/Options.lb
+new file mode 100644
+index 0000000000..6265e72fe1
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/Options.lb
+@@ -0,0 +1,214 @@
++uses HAVE_MP_TABLE
++uses HAVE_PIRQ_TABLE
++uses USE_FALLBACK_IMAGE
++uses HAVE_FALLBACK_BOOT
++uses HAVE_HARD_RESET
++uses IRQ_SLOT_COUNT
++uses HAVE_OPTION_TABLE
++uses CONFIG_MAX_CPUS
++uses CONFIG_MAX_PHYSICAL_CPUS
++uses CONFIG_IOAPIC
++uses CONFIG_SMP
++uses FALLBACK_SIZE
++uses ROM_SIZE
++uses ROM_SECTION_SIZE
++uses ROM_IMAGE_SIZE
++uses ROM_SECTION_SIZE
++uses ROM_SECTION_OFFSET
++uses CONFIG_ROM_STREAM
++uses CONFIG_ROM_STREAM_START
++uses PAYLOAD_SIZE
++uses _ROMBASE
++uses XIP_ROM_SIZE
++uses XIP_ROM_BASE
++uses STACK_SIZE
++uses HEAP_SIZE
++uses USE_OPTION_TABLE
++uses LB_CKS_RANGE_START
++uses LB_CKS_RANGE_END
++uses LB_CKS_LOC
++uses MAINBOARD
++uses MAINBOARD_PART_NUMBER
++uses MAINBOARD_VENDOR
++uses MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID
++uses MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID
++uses LINUXBIOS_EXTRA_VERSION
++uses _RAMBASE
++uses TTYS0_BAUD
++uses TTYS0_BASE
++uses TTYS0_LCS
++uses DEFAULT_CONSOLE_LOGLEVEL
++uses MAXIMUM_CONSOLE_LOGLEVEL
++uses MAINBOARD_POWER_ON_AFTER_POWER_FAIL
++uses CONFIG_CONSOLE_SERIAL8250
++uses HAVE_INIT_TIMER
++uses CONFIG_GDB_STUB
++uses CROSS_COMPILE
++uses CC
++uses HOSTCC
++uses OBJCOPY
++
++uses CONFIG_USE_INIT
++
++## ROM_SIZE is the size of boot ROM that this board will use.
++default ROM_SIZE=524288
++
++###
++### Build options
++###
++
++##
++## FALLBACK_SIZE is the amount of the ROM the complete fallback image will use
++##
++default FALLBACK_SIZE=131072
++
++##
++## Build code for the fallback boot
++##
++default HAVE_FALLBACK_BOOT=1
++
++##
++## Build code to reset the motherboard from linuxBIOS
++##
++default HAVE_HARD_RESET=1
++
++##
++## Build code to export a programmable irq routing table
++##
++default HAVE_PIRQ_TABLE=1
++default IRQ_SLOT_COUNT=9
++
++##
++## Build code to export an x86 MP table
++## Useful for specifying IRQ routing values
++##
++default HAVE_MP_TABLE=1
++
++##
++## Build code to export a CMOS option table
++##
++default HAVE_OPTION_TABLE=1
++
++##
++## Move the default LinuxBIOS cmos range off of AMD RTC registers
++##
++default LB_CKS_RANGE_START=49
++default LB_CKS_RANGE_END=122
++default LB_CKS_LOC=123
++
++##
++## Build code for SMP support
++## Only worry about 2 micro processors
++##
++default CONFIG_SMP=1
++default CONFIG_MAX_CPUS=2
++default CONFIG_MAX_PHYSICAL_CPUS=2
++
++##
++## Build code to setup a generic IOAPIC
++##
++default CONFIG_IOAPIC=1
++
++##
++## Clean up the motherboard id strings
++##
++#default MAINBOARD_PART_NUMBER="HDAMA"
++#default MAINBOARD_VENDOR="ARIMA"
++#default MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID=0x161f
++#default MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID=0x3016
++
++###
++### LinuxBIOS layout values
++###
++
++## ROM_IMAGE_SIZE is the amount of space to allow linuxBIOS to occupy.
++default ROM_IMAGE_SIZE = 65536
++
++##
++## Use a small 8K stack
++##
++default STACK_SIZE=0x2000
++
++##
++## Use a small 16K heap
++##
++default HEAP_SIZE=0x4000
++
++##
++## Only use the option table in a normal image
++##
++default USE_OPTION_TABLE = !USE_FALLBACK_IMAGE
++
++##
++## LinuxBIOS C code runs at this location in RAM
++##
++default _RAMBASE=0x00004000
++
++##
++## Load the payload from the ROM
++##
++default CONFIG_ROM_STREAM = 1
++
++###
++### Defaults of options that you may want to override in the target config file
++### 
++
++##
++## The default compiler
++##
++#default CC="$(CROSS_COMPILE)gcc -m32"
++#default HOSTCC="gcc"
++
++##
++## Disable the gdb stub by default
++##
++default CONFIG_GDB_STUB=0
++
++##
++## The Serial Console
++##
++
++# To Enable the Serial Console
++default CONFIG_CONSOLE_SERIAL8250=1
++
++## Select the serial console baud rate
++default TTYS0_BAUD=115200
++#default TTYS0_BAUD=57600
++#default TTYS0_BAUD=38400
++#default TTYS0_BAUD=19200
++#default TTYS0_BAUD=9600
++#default TTYS0_BAUD=4800
++#default TTYS0_BAUD=2400
++#default TTYS0_BAUD=1200
++
++# Select the serial console base port
++default TTYS0_BASE=0x3f8
++
++# Select the serial protocol
++# This defaults to 8 data bits, 1 stop bit, and no parity
++default TTYS0_LCS=0x3
++
++##
++### Select the linuxBIOS loglevel
++##
++## EMERG      1   system is unusable               
++## ALERT      2   action must be taken immediately 
++## CRIT       3   critical conditions              
++## ERR        4   error conditions                 
++## WARNING    5   warning conditions               
++## NOTICE     6   normal but significant condition 
++## INFO       7   informational                    
++## DEBUG      8   debug-level messages             
++## SPEW       9   Way too many details             
++
++## Request this level of debugging output
++default  DEFAULT_CONSOLE_LOGLEVEL=8
++## At a maximum only compile in this level of debugging
++default  MAXIMUM_CONSOLE_LOGLEVEL=8
++
++##
++## Select power on after power fail setting
++default MAINBOARD_POWER_ON_AFTER_POWER_FAIL="MAINBOARD_POWER_ON"
++
++### End Options.lb
++end
+diff --git a/src/mainboard/iwill/dk8X/auto.c b/src/mainboard/iwill/dk8X/auto.c
+new file mode 100644
+index 0000000000..52dfb87074
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/auto.c
+@@ -0,0 +1,232 @@
++#define ASSEMBLY 1
++#include <stdint.h>
++#include <device/pci_def.h>
++#include <arch/io.h>
++#include <device/pnp_def.h>
++#include <arch/romcc_io.h>
++#include <cpu/x86/lapic.h>
++#include <arch/cpu.h>
++#include "option_table.h"
++#include "pc80/mc146818rtc_early.c"
++#include "pc80/serial.c"
++#include "arch/i386/lib/console.c"
++#include "ram/ramtest.c"
++#include "southbridge/amd/amd8111/amd8111_early_smbus.c"
++#include "northbridge/amd/amdk8/raminit.h"
++#include "cpu/amd/model_fxx/apic_timer.c"
++#include "lib/delay.c"
++#include "cpu/x86/lapic/boot_cpu.c"
++#include "northbridge/amd/amdk8/reset_test.c"
++#include "northbridge/amd/amdk8/debug.c"
++#include <cpu/amd/model_fxx_rev.h>
++
++#include "superio/NSC/pc87360/pc87360_early_serial.c"
++#include "cpu/amd/mtrr/amd_earlymtrr.c"
++#include "cpu/x86/bist.h"
++
++#define SERIAL_DEV PNP_DEV(0x2e, PC87360_SP1)
++
++static void hard_reset(void)
++{
++	set_bios_reset();
++
++	/* enable cf9 */
++	pci_write_config8(PCI_DEV(0, 0x04, 3), 0x41, 0xf1);
++	/* reset */
++	outb(0x0e, 0x0cf9);
++}
++
++static void soft_reset(void)
++{
++	set_bios_reset();
++	pci_write_config8(PCI_DEV(0, 0x04, 0), 0x47, 1);
++}
++
++/*
++ * GPIO28 of 8111 will control H0_MEMRESET_L
++ * GPIO29 of 8111 will control H1_MEMRESET_L
++ */
++static void memreset_setup(void)
++{
++	if (is_cpu_pre_c0()) {
++		/* Set the memreset low */
++		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(0<<0), SMBUS_IO_BASE + 0xc0 + 28);
++		/* Ensure the BIOS has control of the memory lines */
++		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(0<<0), SMBUS_IO_BASE + 0xc0 + 29);
++	}
++	else {
++		/* Ensure the CPU has controll of the memory lines */
++		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(1<<0), SMBUS_IO_BASE + 0xc0 + 29);
++	}
++}
++
++static void memreset(int controllers, const struct mem_controller *ctrl)
++{
++	if (is_cpu_pre_c0()) {
++		udelay(800);
++		/* Set memreset_high */
++		outb((0<<7)|(0<<6)|(0<<5)|(0<<4)|(1<<2)|(1<<0), SMBUS_IO_BASE + 0xc0 + 28);
++		udelay(90);
++	}
++}
++
++static unsigned int generate_row(uint8_t node, uint8_t row, uint8_t maxnodes)
++{
++	/* Routing Table Node i 
++	 *
++	 * F0: 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58, 0x5c 
++	 *  i:    0,    1,    2,    3,    4,    5,    6,    7
++	 *
++	 * [ 0: 3] Request Route
++	 *     [0] Route to this node
++	 *     [1] Route to Link 0
++	 *     [2] Route to Link 1
++	 *     [3] Route to Link 2
++	 * [11: 8] Response Route
++	 *     [0] Route to this node
++	 *     [1] Route to Link 0
++	 *     [2] Route to Link 1
++	 *     [3] Route to Link 2
++	 * [19:16] Broadcast route
++	 *     [0] Route to this node
++	 *     [1] Route to Link 0
++	 *     [2] Route to Link 1
++	 *     [3] Route to Link 2
++	 */
++
++	uint32_t ret=0x00010101; /* default row entry */
++
++	static const unsigned int rows_2p[2][2] = {
++		{ 0x00050101, 0x00010404 },
++		{ 0x00010404, 0x00050101 }
++	};
++
++	if(maxnodes>2) {
++		print_debug("this mainboard is only designed for 2 cpus\r\n");
++		maxnodes=2;
++	}
++
++
++	if (!(node>=maxnodes || row>=maxnodes)) {
++		ret=rows_2p[node][row];
++	}
++
++	return ret;
++}
++
++static inline void activate_spd_rom(const struct mem_controller *ctrl)
++{
++	/* nothing to do */
++}
++
++static inline int spd_read_byte(unsigned device, unsigned address)
++{
++	return smbus_read_byte(device, address);
++}
++
++#include "northbridge/amd/amdk8/raminit.c"
++#include "northbridge/amd/amdk8/coherent_ht.c"
++#include "northbridge/amd/amdk8/incoherent_ht.c"
++#include "sdram/generic_sdram.c"
++#include "northbridge/amd/amdk8/resourcemap.c"
++#include "cpu/amd/dualcore/dualcore.c"
++
++#define FIRST_CPU  1
++#define SECOND_CPU 1
++#define TOTAL_CPUS (FIRST_CPU + SECOND_CPU)
++static void main(unsigned long bist)
++{
++	static const struct mem_controller cpu[] = {
++#if FIRST_CPU
++		{
++			.node_id = 0,
++			.f0 = PCI_DEV(0, 0x18, 0),
++			.f1 = PCI_DEV(0, 0x18, 1),
++			.f2 = PCI_DEV(0, 0x18, 2),
++			.f3 = PCI_DEV(0, 0x18, 3),
++			.channel0 = { (0xa<<3)|0, (0xa<<3)|2, 0, 0 },
++			.channel1 = { (0xa<<3)|1, (0xa<<3)|3, 0, 0 },
++		},
++#endif
++#if SECOND_CPU
++		{
++			.node_id = 1,
++			.f0 = PCI_DEV(0, 0x19, 0),
++			.f1 = PCI_DEV(0, 0x19, 1),
++			.f2 = PCI_DEV(0, 0x19, 2),
++			.f3 = PCI_DEV(0, 0x19, 3),
++			.channel0 = { (0xa<<3)|4, (0xa<<3)|6, 0, 0 },
++			.channel1 = { (0xa<<3)|5, (0xa<<3)|7, 0, 0 },
++		},
++#endif
++	};
++
++	int needs_reset;
++        unsigned nodeid;
++
++	if (bist == 0) {
++	    	k8_init_and_stop_secondaries();
++	}
++	/* Setup the console */
++	pc87360_enable_serial(SERIAL_DEV, TTYS0_BASE);
++	uart_init();
++	console_init();
++
++	/* Halt if there was a built in self test failure */
++	report_bist_failure(bist);
++
++	setup_default_resource_map();
++	needs_reset = setup_coherent_ht_domain();
++	needs_reset |= ht_setup_chain(PCI_DEV(0, 0x18, 0), 0x80);
++	if (needs_reset) {
++		print_info("ht reset -\r\n");
++		soft_reset();
++	}
++
++#if 0
++	print_pci_devices();
++#endif
++	enable_smbus();
++#if 0
++	dump_spd_registers(&cpu[0]);
++#endif
++
++	memreset_setup();
++	sdram_initialize(sizeof(cpu)/sizeof(cpu[0]), cpu);
++
++#if 1
++	dump_pci_devices();
++#endif
++#if 0
++	dump_pci_device(PCI_DEV(0, 0x18, 2));
++#endif
++
++	/* Check all of memory */
++#if 0
++	msr_t msr;
++	msr = rdmsr(TOP_MEM);
++	print_debug("TOP_MEM: ");
++	print_debug_hex32(msr.hi);
++	print_debug_hex32(msr.lo);
++	print_debug("\r\n");
++#endif
++#if 0
++	ram_check(0x00000000, msr.lo);
++#endif
++#if 0
++	static const struct {
++		unsigned long lo, hi;
++	} check_addrs[] = {
++		/* Check 16MB of memory @ 0*/
++		{ 0x00000000, 0x01000000 },
++#if TOTAL_CPUS > 1
++		/* Check 16MB of memory @ 2GB */
++		{ 0x80000000, 0x81000000 },
++#endif
++	};
++	int i;
++	for(i = 0; i < sizeof(check_addrs)/sizeof(check_addrs[0]); i++) {
++		ram_check(check_addrs[i].lo, check_addrs[i].hi);
++	}
++#endif
++}
+diff --git a/src/mainboard/iwill/dk8X/chip.h b/src/mainboard/iwill/dk8X/chip.h
+new file mode 100644
+index 0000000000..4057cfa204
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/chip.h
+@@ -0,0 +1,5 @@
++extern struct chip_operations mainboard_iwill_dk8x_ops;
++
++struct mainboard_iwill_dk8x_config {
++	int nothing;
++};
+diff --git a/src/mainboard/iwill/dk8X/cmos.layout b/src/mainboard/iwill/dk8X/cmos.layout
+new file mode 100644
+index 0000000000..5eb88b9a5a
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/cmos.layout
+@@ -0,0 +1,98 @@
++entries
++
++#start-bit length  config config-ID    name
++#0            8       r       0        seconds
++#8            8       r       0        alarm_seconds
++#16           8       r       0        minutes
++#24           8       r       0        alarm_minutes
++#32           8       r       0        hours
++#40           8       r       0        alarm_hours
++#48           8       r       0        day_of_week
++#56           8       r       0        day_of_month
++#64           8       r       0        month
++#72           8       r       0        year
++#80           4       r       0        rate_select
++#84           3       r       0        REF_Clock
++#87           1       r       0        UIP
++#88           1       r       0        auto_switch_DST
++#89           1       r       0        24_hour_mode
++#90           1       r       0        binary_values_enable
++#91           1       r       0        square-wave_out_enable
++#92           1       r       0        update_finished_enable
++#93           1       r       0        alarm_interrupt_enable
++#94           1       r       0        periodic_interrupt_enable
++#95           1       r       0        disable_clock_updates
++#96         288       r       0        temporary_filler
++0          384       r       0        reserved_memory
++384          1       e       4        boot_option
++385          1       e       4        last_boot
++386          1       e       1        ECC_memory
++388          4       r       0        reboot_bits
++392          3       e       5        baud_rate
++395          1       e       1        hw_scrubber
++396          1       e       1        interleave_chip_selects
++397          2       e       8        max_mem_clock
++399	     1	     e	     2	      dual_core
++400          1       e       1        power_on_after_fail
++412          4       e       6        debug_level
++416          4       e       7        boot_first
++420          4       e       7        boot_second
++424          4       e       7        boot_third
++428          4       h       0        boot_index
++432	     8       h       0        boot_countdown
++440          4       e       9        slow_cpu
++444          1       e       1        nmi
++445          1       e       1        iommu
++728        256       h       0        user_data
++984         16       h       0        check_sum
++# Reserve the extended AMD configuration registers
++1000        24       r       0        reserved_memory
++
++
++
++enumerations
++
++#ID value   text
++1     0     Disable
++1     1     Enable
++2     0     Enable
++2     1     Disable
++4     0     Fallback
++4     1     Normal
++5     0     115200
++5     1     57600
++5     2     38400
++5     3     19200
++5     4     9600
++5     5     4800
++5     6     2400
++5     7     1200
++6     6     Notice
++6     7     Info
++6     8     Debug
++6     9     Spew
++7     0     Network
++7     1     HDD
++7     2     Floppy
++7     8     Fallback_Network
++7     9     Fallback_HDD
++7     10    Fallback_Floppy
++#7     3     ROM
++8     0     DDR400
++8     1     DDR333
++8     2     DDR266
++8     3     DDR200
++9     0     off
++9     1     87.5%
++9     2     75.0%
++9     3     62.5%
++9     4     50.0%
++9     5     37.5%
++9     6     25.0%
++9     7     12.5%
++
++checksums
++
++checksum 392 983 984
++
++
+diff --git a/src/mainboard/iwill/dk8X/failover.c b/src/mainboard/iwill/dk8X/failover.c
+new file mode 100644
+index 0000000000..262fdd60bd
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/failover.c
+@@ -0,0 +1,66 @@
++#define ASSEMBLY 1
++#include <stdint.h>
++#include <device/pci_def.h>
++#include <device/pci_ids.h>
++#include <arch/io.h>
++#include <arch/romcc_io.h>
++#include <cpu/x86/lapic.h>
++#include "pc80/mc146818rtc_early.c"
++#include "southbridge/amd/amd8111/amd8111_enable_rom.c"
++#include "northbridge/amd/amdk8/early_ht.c"
++#include "cpu/x86/lapic/boot_cpu.c"
++#include "cpu/x86/mtrr/earlymtrr.c"
++#include "northbridge/amd/amdk8/reset_test.c"
++
++static unsigned long main(unsigned long bist)
++{
++        unsigned nodeid;
++
++	/* Make cerain my local apic is useable */
++	enable_lapic();
++
++	/* Is this a cpu only reset? */
++	if (early_mtrr_init_detected()) {
++		if (last_boot_normal()) {
++			goto normal_image;
++		} else {
++			goto fallback_image;
++		}
++	}
++	/* Is this a secondary cpu? */
++	if (!boot_cpu()) {
++		if (last_boot_normal()) {
++			goto normal_image;
++		} else {
++			goto fallback_image;
++		}
++	}
++	
++
++	/* Nothing special needs to be done to find bus 0 */
++	/* Allow the HT devices to be found */
++	enumerate_ht_chain();
++	
++	/* Setup the 8111 */
++	amd8111_enable_rom();
++
++	/* Is this a deliberate reset by the bios */
++	if (bios_reset_detected() && last_boot_normal()) {
++		goto normal_image;
++	}
++	/* This is the primary cpu how should I boot? */
++	else if (do_normal_boot()) {
++		goto normal_image;
++	}
++	else {
++		goto fallback_image;
++	}
++ normal_image:
++	asm volatile ("jmp __normal_image" 
++		: /* outputs */ 
++		: "a" (bist) /* inputs */
++		: /* clobbers */
++		);
++ fallback_image:
++	return bist;
++}
+diff --git a/src/mainboard/iwill/dk8X/irq_tables.c b/src/mainboard/iwill/dk8X/irq_tables.c
+new file mode 100644
+index 0000000000..6322c3df21
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/irq_tables.c
+@@ -0,0 +1,56 @@
++#include <arch/pirq_routing.h>
++#include <device/pci.h>
++
++#define IRQ_ROUTER_BUS		1
++#define IRQ_ROUTER_DEVFN	PCI_DEVFN(4,3)
++#define IRQ_ROUTER_VENDOR	0x1022
++#define IRQ_ROUTER_DEVICE	0x746b
++
++#define AVAILABLE_IRQS 0xdef8
++#define IRQ_SLOT(slot, bus, dev, fn, linka, linkb, linkc, linkd) \
++	{ bus, (dev<<3)|fn, {{ linka, AVAILABLE_IRQS}, { linkb, AVAILABLE_IRQS}, \
++	{linkc, AVAILABLE_IRQS}, {linkd, AVAILABLE_IRQS}}, slot, 0}
++
++/*  Each IRQ_SLOT entry consists of:
++ *  bus, devfn, {link, bitmap}, {link, bitmap}, {link, bitmap}, {link, bitmap}, slot, rfu  
++ */
++
++const struct irq_routing_table intel_irq_routing_table = {
++	PIRQ_SIGNATURE,		/* u32 signature */
++	PIRQ_VERSION,		/* u16 version   */
++	32+16*IRQ_SLOT_COUNT,	/* there can be total IRQ_SLOT_COUNT 
++				 * devices on the bus */
++	IRQ_ROUTER_BUS,		/* Where the interrupt router lies (bus) */
++	IRQ_ROUTER_DEVFN,	/* Where the interrupt router lies (dev) */
++	0x00,			/* IRQs devoted exclusively to PCI usage */
++	IRQ_ROUTER_VENDOR,	/* Vendor */
++	IRQ_ROUTER_DEVICE,	/* Device */
++	0x00,			/* Crap (miniport) */
++	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },	/* u8 rfu[11] */
++	0x00,			/*  u8 checksum , mod 256 checksum must give
++				 *  zero, will be corrected later 
++				 */
++	{
++
++		/* slot(0=onboard), devfn, irqlinks (line id, 0=not routed) */
++
++		/* PCI Slot 1-6 */
++		IRQ_SLOT (1, 3,1,0, 2,3,4,1 ),
++		IRQ_SLOT (2, 3,2,0, 3,4,1,2 ),
++		IRQ_SLOT (3, 2,1,0, 2,3,4,1 ),
++		IRQ_SLOT (4, 2,2,0, 3,4,1,2 ),
++		IRQ_SLOT (5, 4,5,0, 2,3,4,1 ),
++		IRQ_SLOT (6, 4,4,0, 1,2,3,4 ),
++
++		/* Onboard NICs */
++		IRQ_SLOT (0, 2,3,0, 4,0,0,0 ),
++		IRQ_SLOT (0, 2,4,0, 4,0,0,0 ),
++
++		/* Let Linux know about bus 1 */
++		IRQ_SLOT (0, 1,4,3, 0,0,0,0 ),
++	}
++};
++unsigned long write_pirq_routing_table(unsigned long addr)
++{
++        return copy_pirq_routing_table(addr);
++}
+diff --git a/src/mainboard/iwill/dk8X/mainboard.c b/src/mainboard/iwill/dk8X/mainboard.c
+new file mode 100644
+index 0000000000..b4bcfb25e8
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/mainboard.c
+@@ -0,0 +1,11 @@
++#include <console/console.h>
++#include <device/device.h>
++#include <device/pci.h>
++#include <device/pci_ids.h>
++#include <device/pci_ops.h>
++#include "chip.h"
++
++struct chip_operations mainboard_iwill_dk8x_ops = {
++	CHIP_NAME("Iwill DK8X mainboard")
++};
++
+diff --git a/src/mainboard/iwill/dk8X/mptable.c b/src/mainboard/iwill/dk8X/mptable.c
+new file mode 100644
+index 0000000000..34e6037c21
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/mptable.c
+@@ -0,0 +1,232 @@
++#include <console/console.h>
++#include <arch/smp/mpspec.h>
++#include <device/pci.h>
++#include <string.h>
++#include <stdint.h>
++
++void *smp_write_config_table(void *v)
++{
++	static const char sig[4] = "PCMP";
++	static const char oem[8] = "IWILL   ";
++	static const char productid[12] = "DK8X        ";
++	struct mp_config_table *mc;
++	unsigned char bus_num;
++	unsigned char bus_isa;
++	unsigned char bus_8131_1;
++	unsigned char bus_8131_2;
++	unsigned char bus_8111_1;
++
++	mc = (void *)(((char *)v) + SMP_FLOATING_TABLE_LEN);
++	memset(mc, 0, sizeof(*mc));
++
++	memcpy(mc->mpc_signature, sig, sizeof(sig));
++	mc->mpc_length = sizeof(*mc); /* initially just the header */
++	mc->mpc_spec = 0x04;
++	mc->mpc_checksum = 0; /* not yet computed */
++	memcpy(mc->mpc_oem, oem, sizeof(oem));
++	memcpy(mc->mpc_productid, productid, sizeof(productid));
++	mc->mpc_oemptr = 0;
++	mc->mpc_oemsize = 0;
++	mc->mpc_entry_count = 0; /* No entries yet... */
++	mc->mpc_lapic = LAPIC_ADDR;
++	mc->mpe_length = 0;
++	mc->mpe_checksum = 0;
++	mc->reserved = 0;
++
++	smp_write_processors(mc);
++
++	{
++		device_t dev;
++
++		/* 8111 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x03,0));
++		if (dev) {
++			bus_8111_1 = pci_read_config8(dev, PCI_SECONDARY_BUS);
++			bus_isa	   = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
++			bus_isa++;
++		}
++		else {
++			printk_debug("ERROR - could not find PCI 1:03.0, using defaults\n");
++
++			bus_8111_1 = 4;
++			bus_isa = 5;
++		}
++		/* 8131-1 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x01,0));
++		if (dev) {
++			bus_8131_1 = pci_read_config8(dev, PCI_SECONDARY_BUS);
++
++		}
++		else {
++			printk_debug("ERROR - could not find PCI 1:01.0, using defaults\n");
++
++			bus_8131_1 = 2;
++		}
++		/* 8131-2 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x02,0));
++		if (dev) {
++			bus_8131_2 = pci_read_config8(dev, PCI_SECONDARY_BUS);
++
++		}
++		else {
++			printk_debug("ERROR - could not find PCI 1:02.0, using defaults\n");
++
++			bus_8131_2 = 3;
++		}
++	}
++
++	/* define bus and isa numbers */
++	for(bus_num = 0; bus_num < bus_isa; bus_num++) {
++		smp_write_bus(mc, bus_num, "PCI	  ");
++	}
++	smp_write_bus(mc, bus_isa, "ISA	  ");
++
++	/* IOAPIC handling */
++	smp_write_ioapic(mc, 2, 0x11, 0xfec00000);
++	{
++		device_t dev;
++		struct resource *res;
++		/* 8131 apic 3 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x01,1));
++		if (dev) {
++			res = find_resource(dev, PCI_BASE_ADDRESS_0);
++			if (res) {
++				smp_write_ioapic(mc, 0x03, 0x11, res->base);
++			}
++		}
++		/* 8131 apic 4 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x02,1));
++		if (dev) {
++			res = find_resource(dev, PCI_BASE_ADDRESS_0);
++			if (res) {
++				smp_write_ioapic(mc, 0x04, 0x11, res->base);
++			}
++		}
++	}
++
++	/* ISA backward compatibility interrupts  */
++	smp_write_intsrc(mc, mp_ExtINT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x00, 0x02, 0x00);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x01, 0x02, 0x01);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x00, 0x02, 0x02);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x03, 0x02, 0x03);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x04, 0x02, 0x04);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x05, 0x02, 0x05);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x06, 0x02, 0x06);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x07, 0x02, 0x07);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x08, 0x02, 0x08);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x09, 0x02, 0x09);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0a, 0x02, 0x0a);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0b, 0x02, 0x0b);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0c, 0x02, 0x0c);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0d, 0x02, 0x0d);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0e, 0x02, 0x0e);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0f, 0x02, 0x0f);
++
++	/* Standard local interrupt assignments */
++	smp_write_lintsrc(mc, mp_ExtINT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x00, MP_APIC_ALL, 0x00);
++	smp_write_lintsrc(mc, mp_NMI, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x00, MP_APIC_ALL, 0x01);
++
++
++	/* PCI Slot 1 */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (1<<2)|0, 0x02, 0x11);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (1<<2)|1, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (1<<2)|2, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (1<<2)|3, 0x02, 0x10);
++
++	/* PCI Slot 2 */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (2<<2)|0, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (2<<2)|1, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (2<<2)|2, 0x02, 0x10);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (2<<2)|3, 0x02, 0x11);
++
++	/* PCI Slot 3 */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (1<<2)|0, 0x02, 0x11);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (1<<2)|1, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (1<<2)|2, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (1<<2)|3, 0x02, 0x10);
++
++	/* PCI Slot 4 */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (2<<2)|0, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (2<<2)|1, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (2<<2)|2, 0x02, 0x10);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (2<<2)|3, 0x02, 0x11);
++
++	/* PCI Slot 5 */
++#warning "FIXME get the irqs right, it's just hacked to work for now"
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (5<<2)|0, 0x02, 0x11);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (5<<2)|1, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (5<<2)|2, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (5<<2)|3, 0x02, 0x10);
++
++	/* PCI Slot 6 */
++#warning "FIXME get the irqs right, it's just hacked to work for now"
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (4<<2)|0, 0x02, 0x10);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (4<<2)|1, 0x02, 0x11);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (4<<2)|2, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (4<<2)|3, 0x02, 0x13);
++
++	/* On board nics */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (3<<2)|0, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (4<<2)|0, 0x02, 0x13);
++
++	/* There is no extension information... */
++
++	/* Compute the checksums */
++	mc->mpe_checksum = smp_compute_checksum(smp_next_mpc_entry(mc), mc->mpe_length);
++	mc->mpc_checksum = smp_compute_checksum(mc, mc->mpc_length);
++	printk_debug("Wrote the mp table end at: %p - %p\n",
++		mc, smp_next_mpe_entry(mc));
++	return smp_next_mpe_entry(mc);
++}
++
++unsigned long write_smp_table(unsigned long addr)
++{
++	void *v;
++	v = smp_write_floating_table(addr);
++	return (unsigned long)smp_write_config_table(v);
++}
++
+diff --git a/src/mainboard/iwill/dk8X/reset.c b/src/mainboard/iwill/dk8X/reset.c
+new file mode 100644
+index 0000000000..3db3956ec6
+--- /dev/null
++++ b/src/mainboard/iwill/dk8X/reset.c
+@@ -0,0 +1,6 @@
++#include "../../../southbridge/amd/amd8111/amd8111_reset.c"
++
++void hard_reset(void)
++{
++	amd8111_hard_reset(0, 0);
++}
+diff --git a/src/mainboard/iwill/dk8_htx/Options.lb b/src/mainboard/iwill/dk8_htx/Options.lb
+index ac0127d738..0387b5ac4c 100644
+--- a/src/mainboard/iwill/dk8_htx/Options.lb
++++ b/src/mainboard/iwill/dk8_htx/Options.lb
+@@ -1,334 +1,334 @@
+ uses HAVE_MP_TABLE
+ uses HAVE_PIRQ_TABLE
+ uses HAVE_ACPI_TABLES
+ uses ACPI_SSDTX_NUM
+ uses USE_FALLBACK_IMAGE
+ uses USE_FAILOVER_IMAGE
+ uses HAVE_FALLBACK_BOOT
+ uses HAVE_FAILOVER_BOOT
+ uses HAVE_HARD_RESET
+ uses IRQ_SLOT_COUNT
+ uses HAVE_OPTION_TABLE
+ uses CONFIG_MAX_CPUS
+ uses CONFIG_MAX_PHYSICAL_CPUS
+ uses CONFIG_LOGICAL_CPUS
+ uses CONFIG_IOAPIC
+ uses CONFIG_SMP
+ uses FALLBACK_SIZE
+ uses FAILOVER_SIZE
+ uses ROM_SIZE
+ uses ROM_SECTION_SIZE
+ uses ROM_IMAGE_SIZE
+ uses ROM_SECTION_SIZE
+ uses ROM_SECTION_OFFSET
+ uses CONFIG_ROM_STREAM
+ uses CONFIG_ROM_STREAM_START
+ uses CONFIG_COMPRESSED_ROM_STREAM
+ uses PAYLOAD_SIZE
+ uses _ROMBASE
+ uses XIP_ROM_SIZE
+ uses XIP_ROM_BASE
+ uses STACK_SIZE
+ uses HEAP_SIZE
+ uses USE_OPTION_TABLE
+ uses LB_CKS_RANGE_START
+ uses LB_CKS_RANGE_END
+ uses LB_CKS_LOC
+ uses MAINBOARD_PART_NUMBER
+ uses MAINBOARD_VENDOR
+ uses MAINBOARD
+ uses MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID
+ uses MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID
+ uses LINUXBIOS_EXTRA_VERSION
+ uses _RAMBASE
+ uses TTYS0_BAUD
+ uses TTYS0_BASE
+ uses TTYS0_LCS
+ uses DEFAULT_CONSOLE_LOGLEVEL
+ uses MAXIMUM_CONSOLE_LOGLEVEL
+ uses MAINBOARD_POWER_ON_AFTER_POWER_FAIL
+ uses CONFIG_CONSOLE_SERIAL8250
+ uses HAVE_INIT_TIMER
+ uses CONFIG_GDB_STUB
+ uses CONFIG_GDB_STUB
+ uses CROSS_COMPILE
+ uses CC
+ uses HOSTCC
+ uses OBJCOPY
+ uses CONFIG_CHIP_NAME
+ uses CONFIG_CONSOLE_VGA
+ uses CONFIG_PCI_ROM_RUN
+ uses HW_MEM_HOLE_SIZEK
+ uses HW_MEM_HOLE_SIZE_AUTO_INC
+ uses K8_HT_FREQ_1G_SUPPORT
+ 
+ uses HT_CHAIN_UNITID_BASE
+ uses HT_CHAIN_END_UNITID_BASE
+ uses SB_HT_CHAIN_ON_BUS0
+ uses SB_HT_CHAIN_UNITID_OFFSET_ONLY
+ 
+ uses USE_DCACHE_RAM
+ uses DCACHE_RAM_BASE
+ uses DCACHE_RAM_SIZE
+ uses DCACHE_RAM_GLOBAL_VAR_SIZE
+ uses CONFIG_USE_INIT
+ 
+ uses SERIAL_CPU_INIT
+ 
+ uses ENABLE_APIC_EXT_ID
+ uses APIC_ID_OFFSET
+ uses LIFT_BSP_APIC_ID
+ 
+ uses CONFIG_PCI_64BIT_PREF_MEM
+ 
+ uses CONFIG_LB_MEM_TOPK
+ 
+ uses CONFIG_AP_CODE_IN_CAR
+ 
+ uses MEM_TRAIN_SEQ
+ 
+ uses WAIT_BEFORE_CPUS_INIT
+ 
+ uses CONFIG_USE_PRINTK_IN_CAR
+ 
+ ###
+ ### Build options
+ ###
+ 
+ ##
+ ## ROM_SIZE is the size of boot ROM that this board will use.
+ ##
+ default ROM_SIZE=524288
+ 
+ ##
+ ## FALLBACK_SIZE is the amount of the ROM the complete fallback image will use
+ ##
+ #default FALLBACK_SIZE=131072
+ #default FALLBACK_SIZE=0x40000
+ 
+ #FALLBACK: 256K-4K
+ default FALLBACK_SIZE=0x3f000
+ #FAILOVER: 4K
+ default FAILOVER_SIZE=0x01000
+ 
+ #more 1M for pgtbl
+ default CONFIG_LB_MEM_TOPK=2048
+ 
+ ##
+ ## Build code for the fallback boot
+ ##
+ default HAVE_FALLBACK_BOOT=1
+ default HAVE_FAILOVER_BOOT=1
+ 
+ ##
+ ## Build code to reset the motherboard from linuxBIOS
+ ##
+ default HAVE_HARD_RESET=1
+ 
+ ##
+ ## Build code to export a programmable irq routing table
+ ##
+ default HAVE_PIRQ_TABLE=1
+ default IRQ_SLOT_COUNT=11
+ 
+ ##
+ ## Build code to export an x86 MP table
+ ## Useful for specifying IRQ routing values
+ ##
+ default HAVE_MP_TABLE=1
+ 
+ ## ACPI tables will be included
+ default HAVE_ACPI_TABLES=1
+ ## extra SSDT num
+ default ACPI_SSDTX_NUM=3
+ 
+ ##
+ ## Build code to export a CMOS option table
+ ##
+ default HAVE_OPTION_TABLE=1
+ 
+ ##
+ ## Move the default LinuxBIOS cmos range off of AMD RTC registers
+ ##
+ default LB_CKS_RANGE_START=49
+ default LB_CKS_RANGE_END=122
+ default LB_CKS_LOC=123
+ 
+ ##
+ ## Build code for SMP support
+ ## Only worry about 2 micro processors
+ ##
+ default CONFIG_SMP=1
+ default CONFIG_MAX_CPUS=4
+ default CONFIG_MAX_PHYSICAL_CPUS=2
+ default CONFIG_LOGICAL_CPUS=1
+ 
+ default SERIAL_CPU_INIT=0
+ 
+ default ENABLE_APIC_EXT_ID=0
+ default APIC_ID_OFFSET=0x10
+ default LIFT_BSP_APIC_ID=1
+ 
+ #CHIP_NAME ?
+ default CONFIG_CHIP_NAME=1
+ 
+ #memory hole size, 0 mean disable, others will enable the hole, at that case if it is small than mmio_basek, it will use mmio_basek instead. 
+ #2G
+ #default HW_MEM_HOLE_SIZEK=0x200000
+ #1G
+ #default HW_MEM_HOLE_SIZEK=0x100000
+ #512M
+ default HW_MEM_HOLE_SIZEK=0x80000
+ 
+ #make auto increase hole size to avoid hole_startk equal to basek so as to make some kernel happy
+ #default HW_MEM_HOLE_SIZE_AUTO_INC=1
+ 
+ #Opteron K8 1G HT Support
+ default K8_HT_FREQ_1G_SUPPORT=1
+ 
+ #VGA Console
+ default CONFIG_CONSOLE_VGA=1
+ default CONFIG_PCI_ROM_RUN=1
+ 
+ #HT Unit ID offset, default is 1, the typical one
+ default HT_CHAIN_UNITID_BASE=0xa
+ 
+ #real SB Unit ID, default is 0x20, mean dont touch it at last
+ default HT_CHAIN_END_UNITID_BASE=0x6
+ 
+ #make the SB HT chain on bus 0, default is not (0)
+ default SB_HT_CHAIN_ON_BUS0=2
+ 
+ #only offset for SB chain?, default is yes(1)
+ #default SB_HT_CHAIN_UNITID_OFFSET_ONLY=0
+ 
+ #allow capable device use that above 4G
+ #default CONFIG_PCI_64BIT_PREF_MEM=1
+ 
+ ##
+ ## enable CACHE_AS_RAM specifics
+ ##
+ default USE_DCACHE_RAM=1
+ default DCACHE_RAM_BASE=0xc4000
+ default DCACHE_RAM_SIZE=0x0c000
+ default DCACHE_RAM_GLOBAL_VAR_SIZE=0x01000
+ default CONFIG_USE_INIT=0
+ 
+ ##
+ ## for rev F training on AP purpose
+ ##
+ #default CONFIG_AP_CODE_IN_CAR=1
+ #default MEM_TRAIN_SEQ=1
+ #default WAIT_BEFORE_CPUS_INIT=1
+ 
+ ##
+ ## Build code to setup a generic IOAPIC
+ ##
+ default CONFIG_IOAPIC=1
+ 
+ ##
+ ## Clean up the motherboard id strings
+ ##
+ default MAINBOARD_PART_NUMBER="dk8_htx"
+-default MAINBOARD_VENDOR="Iwill"
++default MAINBOARD_VENDOR="iwill"
+ default MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID=0x1022
+ default MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID=0x2b80
+ 
+ ###
+ ### LinuxBIOS layout values
+ ###
+ 
+ ## ROM_IMAGE_SIZE is the amount of space to allow linuxBIOS to occupy.
+ default ROM_IMAGE_SIZE = 65536
+ 
+ ##
+ ## Use a small 8K stack
+ ##
+ default STACK_SIZE=0x2000
+ 
+ ##
+ ## Use a small 32K heap
+ ##
+ default HEAP_SIZE=0x8000
+ 
+ ##
+ ## Only use the option table in a normal image
+ ##
+ default USE_OPTION_TABLE = (!USE_FALLBACK_IMAGE) && (!USE_FAILOVER_IMAGE )
+ 
+ ##
+ ## LinuxBIOS C code runs at this location in RAM
+ ##
+ default _RAMBASE=0x00100000
+ 
+ ##
+ ## Load the payload from the ROM
+ ##
+ default CONFIG_ROM_STREAM = 1
+ 
+ #default CONFIG_COMPRESSED_ROM_STREAM = 1
+ 
+ ###
+ ### Defaults of options that you may want to override in the target config file
+ ### 
+ 
+ ##
+ ## The default compiler
+ ##
+ default CC="$(CROSS_COMPILE)gcc -m32"
+ default HOSTCC="gcc"
+ 
+ ##
+ ## Disable the gdb stub by default
+ ## 
+ default CONFIG_GDB_STUB=0
+ 
+ ##
+ ## The Serial Console
+ ##
+ default CONFIG_USE_PRINTK_IN_CAR=1
+ 
+ # To Enable the Serial Console
+ default CONFIG_CONSOLE_SERIAL8250=1
+ 
+ ## Select the serial console baud rate
+ default TTYS0_BAUD=115200
+ #default TTYS0_BAUD=57600
+ #default TTYS0_BAUD=38400
+ #default TTYS0_BAUD=19200
+ #default TTYS0_BAUD=9600
+ #default TTYS0_BAUD=4800
+ #default TTYS0_BAUD=2400
+ #default TTYS0_BAUD=1200
+ 
+ # Select the serial console base port
+ default TTYS0_BASE=0x3f8
+ 
+ # Select the serial protocol
+ # This defaults to 8 data bits, 1 stop bit, and no parity
+ default TTYS0_LCS=0x3
+ 
+ ##
+ ### Select the linuxBIOS loglevel
+ ##
+ ## EMERG      1   system is unusable               
+ ## ALERT      2   action must be taken immediately 
+ ## CRIT       3   critical conditions              
+ ## ERR        4   error conditions                 
+ ## WARNING    5   warning conditions               
+ ## NOTICE     6   normal but significant condition 
+ ## INFO       7   informational                    
+ ## DEBUG      8   debug-level messages             
+ ## SPEW       9   Way too many details             
+ 
+ ## Request this level of debugging output
+ default  DEFAULT_CONSOLE_LOGLEVEL=8
+ ## At a maximum only compile in this level of debugging
+ default  MAXIMUM_CONSOLE_LOGLEVEL=8
+ 
+ ##
+ ## Select power on after power fail setting
+ default MAINBOARD_POWER_ON_AFTER_POWER_FAIL="MAINBOARD_POWER_ON"
+ 
+ ### End Options.lb
+ end
+diff --git a/src/mainboard/iwill/dk8_htx/chip.h b/src/mainboard/iwill/dk8_htx/chip.h
+index a0c950682b..6d6e90c515 100644
+--- a/src/mainboard/iwill/dk8_htx/chip.h
++++ b/src/mainboard/iwill/dk8_htx/chip.h
+@@ -1,6 +1,6 @@
+-extern struct chip_operations mainboard_Iwill_dk8_htx_ops;
++extern struct chip_operations mainboard_iwill_dk8_htx_ops;
+ 
+-struct mainboard_Iwill_dk8_htx_config {
++struct mainboard_iwill_dk8_htx_config {
+ //	int fixup_scsi;
+ //	int fixup_vga;
+ };
+diff --git a/src/mainboard/iwill/dk8s2/Config.lb b/src/mainboard/iwill/dk8s2/Config.lb
+new file mode 100644
+index 0000000000..661411b4e8
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/Config.lb
+@@ -0,0 +1,222 @@
++##
++## Compute the location and size of where this firmware image
++## (linuxBIOS plus bootloader) will live in the boot rom chip.
++##
++if USE_FALLBACK_IMAGE
++	default ROM_SECTION_SIZE   = FALLBACK_SIZE
++	default ROM_SECTION_OFFSET = ( ROM_SIZE - FALLBACK_SIZE )
++else
++	default ROM_SECTION_SIZE   = ( ROM_SIZE - FALLBACK_SIZE )
++	default ROM_SECTION_OFFSET = 0
++end
++
++##
++## Compute the start location and size size of
++## The linuxBIOS bootloader.
++##
++default PAYLOAD_SIZE            = ( ROM_SECTION_SIZE - ROM_IMAGE_SIZE )
++default CONFIG_ROM_STREAM_START = (0xffffffff - ROM_SIZE + ROM_SECTION_OFFSET + 1)
++
++##
++## Compute where this copy of linuxBIOS will start in the boot rom
++##
++default _ROMBASE      = ( CONFIG_ROM_STREAM_START + PAYLOAD_SIZE )
++
++##
++## Compute a range of ROM that can cached to speed up linuxBIOS,
++## execution speed.
++##
++## XIP_ROM_SIZE must be a power of 2.
++## XIP_ROM_BASE must be a multiple of XIP_ROM_SIZE
++##
++default XIP_ROM_SIZE=65536
++default XIP_ROM_BASE = ( _ROMBASE + ROM_IMAGE_SIZE - XIP_ROM_SIZE )
++
++##
++## Set all of the defaults for an x86 architecture
++##
++
++arch i386 end
++
++##
++## Build the objects we have code for in this directory.
++##
++
++driver mainboard.o
++if HAVE_MP_TABLE object mptable.o end
++if HAVE_PIRQ_TABLE object irq_tables.o end
++#object reset.o
++
++## ATI Rage XL framebuffering graphics driver
++dir /drivers/ati/ragexl
++
++##
++## Romcc output
++##
++makerule ./failover.E
++	depends "$(MAINBOARD)/failover.c ./romcc" 
++	action "./romcc -E -O --label-prefix=failover -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/failover.c -o $@"
++end
++
++makerule ./failover.inc
++	depends "$(MAINBOARD)/failover.c ./romcc"
++	action "./romcc    -O --label-prefix=failover -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/failover.c -o $@"
++end
++
++makerule ./auto.E 
++	depends	"$(MAINBOARD)/auto.c option_table.h ./romcc" 
++	action	"./romcc -E -mcpu=k8 -O2 -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/auto.c -o $@"
++end
++makerule ./auto.inc 
++	depends "$(MAINBOARD)/auto.c option_table.h ./romcc"
++	action	"./romcc    -mcpu=k8 -O2 -I$(TOP)/src -I. $(CPPFLAGS) $(MAINBOARD)/auto.c -o $@"
++end
++
++##
++## Build our 16 bit and 32 bit linuxBIOS entry code
++##
++mainboardinit cpu/x86/16bit/entry16.inc
++mainboardinit cpu/x86/32bit/entry32.inc
++ldscript /cpu/x86/16bit/entry16.lds
++ldscript /cpu/x86/32bit/entry32.lds
++
++##
++## Build our reset vector (This is where linuxBIOS is entered)
++##
++if USE_FALLBACK_IMAGE 
++	mainboardinit cpu/x86/16bit/reset16.inc 
++	ldscript /cpu/x86/16bit/reset16.lds 
++else
++	mainboardinit cpu/x86/32bit/reset32.inc 
++	ldscript /cpu/x86/32bit/reset32.lds 
++end
++
++### Should this be in the northbridge code?
++mainboardinit arch/i386/lib/cpu_reset.inc
++
++##
++## Include an id string (For safe flashing)
++##
++mainboardinit arch/i386/lib/id.inc
++ldscript /arch/i386/lib/id.lds
++
++###
++### This is the early phase of linuxBIOS startup 
++### Things are delicate and we test to see if we should
++### failover to another image.
++###
++if USE_FALLBACK_IMAGE
++	ldscript /arch/i386/lib/failover.lds 
++	mainboardinit ./failover.inc
++end
++
++###
++### O.k. We aren't just an intermediary anymore!
++###
++
++##
++## Setup RAM
++##
++mainboardinit cpu/x86/fpu/enable_fpu.inc
++mainboardinit cpu/x86/mmx/enable_mmx.inc
++mainboardinit cpu/x86/sse/enable_sse.inc
++mainboardinit ./auto.inc
++mainboardinit cpu/x86/sse/disable_sse.inc
++mainboardinit cpu/x86/mmx/disable_mmx.inc
++
++##
++## Include the secondary Configuration files 
++##
++dir /pc80
++config chip.h
++
++# config for iwill/dk8s2
++chip northbridge/amd/amdk8/root_complex
++	device pci_domain 0 on
++		chip northbridge/amd/amdk8
++			device pci 18.0 on # LDT 0
++				chip southbridge/amd/amd8131
++					device pci 0.0 on end
++					device pci 0.1 on end
++					device pci 1.0 on end
++					device pci 1.1 on end
++				end
++				chip southbridge/amd/amd8111
++					# this "device pci 0.0" is the parent the next one
++					# PCI bridge
++					device pci 0.0 on
++						device pci 0.0 on end
++						device pci 0.1 on end
++						device pci 0.2 on end
++						device pci 1.0 off end
++					end
++					device pci 1.0 on
++						chip superio/winbond/w83627hf
++							device pnp  2e.0 on      # Floppy
++								 io 0x60 = 0x3f0
++								irq 0x70 = 6
++								drq 0x74 = 2
++							end
++							device pnp  2e.1 off     # Parallel Port
++								 io 0x60 = 0x378
++								irq 0x70 = 7
++							end
++							device pnp  2e.2 on      # Com1
++								 io 0x60 = 0x3f8
++								irq 0x70 = 4
++							end
++							device pnp  2e.3 off     # Com2
++								io 0x60 = 0x2f8
++								irq 0x70 = 3
++							end
++							device pnp  2e.5 on      # Keyboard
++								 io 0x60 = 0x60
++								 io 0x62 = 0x64
++							       irq 0x70 = 1
++								irq 0x72 = 12
++							end
++							device pnp  2e.6 off end # CIR
++							device pnp  2e.7 off end # GAME_MIDI_GIPO1
++							device pnp  2e.8 off end # GPIO2
++							device pnp  2e.9 off end # GPIO3
++							device pnp  2e.a off end # ACPI
++							device pnp  2e.b on      # HW Monitor
++								 io 0x60 = 0x290
++							end
++							register "com1" = "{1}"
++						#	register "com1" = "{1, 0, 0x3f8, 4}"
++						#	register "lpt" = "{1}"
++						end
++					end
++					device pci 1.1 on end
++					device pci 1.2 on end
++					device pci 1.3 on end
++					device pci 1.5 off end
++					device pci 1.6 off end
++				end
++			end # LDT0
++			device pci 18.0 on end # LDT1
++			device pci 18.0 on end # LDT2
++			device pci 18.1 on end
++			device pci 18.2 on end
++			device pci 18.3 on end
++		end
++		chip northbridge/amd/amdk8
++			device pci 19.0 on end
++			device pci 19.0 on end
++			device pci 19.0 on end
++			device pci 19.1 on end
++			device pci 19.2 on end
++			device pci 19.3 on end
++		end
++	end
++	device apic_cluster 0 on
++		chip cpu/amd/socket_940
++			device apic 0 on end
++		end
++		chip cpu/amd/socket_940
++			device apic 1 on end
++		end
++	end
++end
++
+diff --git a/src/mainboard/iwill/dk8s2/Options.lb b/src/mainboard/iwill/dk8s2/Options.lb
+new file mode 100644
+index 0000000000..c0a1043c16
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/Options.lb
+@@ -0,0 +1,215 @@
++uses HAVE_MP_TABLE
++uses HAVE_PIRQ_TABLE
++uses USE_FALLBACK_IMAGE
++uses HAVE_FALLBACK_BOOT
++uses HAVE_HARD_RESET
++uses IRQ_SLOT_COUNT
++uses HAVE_OPTION_TABLE
++uses CONFIG_MAX_CPUS
++uses CONFIG_MAX_PHYSICAL_CPUS
++uses CONFIG_IOAPIC
++uses CONFIG_SMP
++uses FALLBACK_SIZE
++uses ROM_SIZE
++uses ROM_SECTION_SIZE
++uses ROM_IMAGE_SIZE
++uses ROM_SECTION_SIZE
++uses ROM_SECTION_OFFSET
++uses CONFIG_ROM_STREAM
++uses CONFIG_ROM_STREAM_START
++uses PAYLOAD_SIZE
++uses _ROMBASE
++uses XIP_ROM_SIZE
++uses XIP_ROM_BASE
++uses STACK_SIZE
++uses HEAP_SIZE
++uses USE_OPTION_TABLE
++uses LB_CKS_RANGE_START
++uses LB_CKS_RANGE_END
++uses LB_CKS_LOC
++uses MAINBOARD
++uses MAINBOARD_PART_NUMBER
++uses MAINBOARD_VENDOR
++uses MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID
++uses MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID
++uses LINUXBIOS_EXTRA_VERSION
++uses _RAMBASE
++uses TTYS0_BAUD
++uses TTYS0_BASE
++uses TTYS0_LCS
++uses DEFAULT_CONSOLE_LOGLEVEL
++uses MAXIMUM_CONSOLE_LOGLEVEL
++uses MAINBOARD_POWER_ON_AFTER_POWER_FAIL
++uses CONFIG_CONSOLE_SERIAL8250
++uses HAVE_INIT_TIMER
++uses CONFIG_GDB_STUB
++uses CROSS_COMPILE
++uses CC
++uses HOSTCC
++uses OBJCOPY
++
++uses CONFIG_USE_INIT
++
++## ROM_SIZE is the size of boot ROM that this board will use.
++default ROM_SIZE=524288
++
++###
++### Build options
++###
++
++##
++## FALLBACK_SIZE is the amount of the ROM the complete fallback image will use
++##
++default FALLBACK_SIZE=0x40000
++
++##
++## Build code for the fallback boot
++##
++default HAVE_FALLBACK_BOOT=1
++
++##
++## Build code to reset the motherboard from linuxBIOS
++##
++default HAVE_HARD_RESET=1
++
++##
++## Build code to export a programmable irq routing table
++##
++default HAVE_PIRQ_TABLE=1
++default IRQ_SLOT_COUNT=9
++
++##
++## Build code to export an x86 MP table
++## Useful for specifying IRQ routing values
++##
++default HAVE_MP_TABLE=1
++
++##
++## Build code to export a CMOS option table
++##
++default HAVE_OPTION_TABLE=1
++
++##
++## Move the default LinuxBIOS cmos range off of AMD RTC registers
++##
++default LB_CKS_RANGE_START=49
++default LB_CKS_RANGE_END=122
++default LB_CKS_LOC=123
++
++##
++## Build code for SMP support
++## Only worry about 2 micro processors
++##
++default CONFIG_SMP=1
++default CONFIG_MAX_CPUS=2
++default CONFIG_MAX_PHYSICAL_CPUS=2
++
++##
++## Build code to setup a generic IOAPIC
++##
++default CONFIG_IOAPIC=1
++
++##
++## Clean up the motherboard id strings
++##
++default MAINBOARD_PART_NUMBER="HDAMA"
++default MAINBOARD_VENDOR="ARIMA"
++default MAINBOARD_PCI_SUBSYSTEM_VENDOR_ID=0x161f
++default MAINBOARD_PCI_SUBSYSTEM_DEVICE_ID=0x3016
++
++
++###
++### LinuxBIOS layout values
++###
++
++## ROM_IMAGE_SIZE is the amount of space to allow linuxBIOS to occupy.
++default ROM_IMAGE_SIZE = 65536
++
++##
++## Use a small 8K stack
++##
++default STACK_SIZE=0x2000
++
++##
++## Use a small 16K heap
++##
++default HEAP_SIZE=0x4000
++
++##
++## Only use the option table in a normal image
++##
++default USE_OPTION_TABLE = !USE_FALLBACK_IMAGE
++
++##
++## LinuxBIOS C code runs at this location in RAM
++##
++default _RAMBASE=0x00004000
++
++##
++## Load the payload from the ROM
++##
++default CONFIG_ROM_STREAM = 1
++
++###
++### Defaults of options that you may want to override in the target config file
++### 
++
++##
++## The default compiler
++##
++#default CC="$(CROSS_COMPILE)gcc -m32"
++#default HOSTCC="gcc"
++
++##
++## Disable the gdb stub by default
++##
++default CONFIG_GDB_STUB=0
++
++##
++## The Serial Console
++##
++
++# To Enable the Serial Console
++default CONFIG_CONSOLE_SERIAL8250=1
++
++## Select the serial console baud rate
++default TTYS0_BAUD=115200
++#default TTYS0_BAUD=57600
++#default TTYS0_BAUD=38400
++#default TTYS0_BAUD=19200
++#default TTYS0_BAUD=9600
++#default TTYS0_BAUD=4800
++#default TTYS0_BAUD=2400
++#default TTYS0_BAUD=1200
++
++# Select the serial console base port
++default TTYS0_BASE=0x3f8
++
++# Select the serial protocol
++# This defaults to 8 data bits, 1 stop bit, and no parity
++default TTYS0_LCS=0x3
++
++##
++### Select the linuxBIOS loglevel
++##
++## EMERG      1   system is unusable               
++## ALERT      2   action must be taken immediately 
++## CRIT       3   critical conditions              
++## ERR        4   error conditions                 
++## WARNING    5   warning conditions               
++## NOTICE     6   normal but significant condition 
++## INFO       7   informational                    
++## DEBUG      8   debug-level messages             
++## SPEW       9   Way too many details             
++
++## Request this level of debugging output
++default  DEFAULT_CONSOLE_LOGLEVEL=8
++## At a maximum only compile in this level of debugging
++default  MAXIMUM_CONSOLE_LOGLEVEL=8
++
++##
++## Select power on after power fail setting
++default MAINBOARD_POWER_ON_AFTER_POWER_FAIL="MAINBOARD_POWER_ON"
++
++### End Options.lb
++end
+diff --git a/src/mainboard/iwill/dk8s2/auto.c b/src/mainboard/iwill/dk8s2/auto.c
+new file mode 100644
+index 0000000000..06b3e42cdf
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/auto.c
+@@ -0,0 +1,201 @@
++#define ASSEMBLY 1
++#include <stdint.h>
++#include <device/pci_def.h>
++#include <arch/io.h>
++#include <device/pnp_def.h>
++#include <arch/romcc_io.h>
++#include <cpu/x86/lapic.h>
++#include <arch/cpu.h>
++#include "option_table.h"
++#include "pc80/mc146818rtc_early.c"
++#include "pc80/serial.c"
++#include "arch/i386/lib/console.c"
++#include "ram/ramtest.c"
++#include "southbridge/amd/amd8111/amd8111_early_smbus.c"
++#include "northbridge/amd/amdk8/raminit.h"
++#include "cpu/amd/model_fxx/apic_timer.c"
++#include "lib/delay.c"
++#include "cpu/x86/lapic/boot_cpu.c"
++#include "northbridge/amd/amdk8/reset_test.c"
++#include "northbridge/amd/amdk8/debug.c"
++#include <cpu/amd/model_fxx_rev.h>
++#include "superio/winbond/w83627hf/w83627hf_early_serial.c"
++#include "cpu/amd/mtrr/amd_earlymtrr.c"
++#include "cpu/x86/bist.h"
++
++
++#define SERIAL_DEV PNP_DEV(0x2e, W83627HF_SP1)
++
++static void hard_reset(void)
++{
++	set_bios_reset();
++
++	/* enable cf9 */
++	pci_write_config8(PCI_DEV(0, 0x04, 3), 0x41, 0xf1);
++	/* reset */
++	outb(0x0e, 0x0cf9);
++}
++
++static void soft_reset(void)
++{
++	set_bios_reset();
++	pci_write_config8(PCI_DEV(0, 0x04, 0), 0x47, 1);
++}
++
++/*
++ * GPIO28 of 8111 will control H0_MEMRESET_L
++ * GPIO29 of 8111 will control H1_MEMRESET_L
++ */
++static void memreset_setup(void)
++{
++	if (is_cpu_pre_c0()) {
++		/* Set the memreset low */
++		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(0<<0), SMBUS_IO_BASE + 0xc0 + 28);
++		/* Ensure the BIOS has control of the memory lines */
++		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(0<<0), SMBUS_IO_BASE + 0xc0 + 29);
++	} else {
++		/* Ensure the CPU has controll of the memory lines */
++		outb((0 << 7)|(0 << 6)|(0<<5)|(0<<4)|(1<<2)|(1<<0), SMBUS_IO_BASE + 0xc0 + 29);
++	}
++}
++
++static void memreset(int controllers, const struct mem_controller *ctrl)
++{
++	if (is_cpu_pre_c0()) {
++		udelay(800);
++		/* Set memreset_high */
++		outb((0<<7)|(0<<6)|(0<<5)|(0<<4)|(1<<2)|(1<<0), SMBUS_IO_BASE + 0xc0 + 28);
++		udelay(90);
++	}
++}
++
++static unsigned int generate_row(uint8_t node, uint8_t row, uint8_t maxnodes)
++{
++	/* Routing Table Node i 
++	 *
++	 * F0: 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58, 0x5c 
++	 *  i:	  0,	1,    2,    3,	  4,	5,    6,    7
++	 *
++	 * [ 0: 3] Request Route
++	 *     [0] Route to this node
++	 *     [1] Route to Link 0
++	 *     [2] Route to Link 1
++	 *     [3] Route to Link 2
++	 * [11: 8] Response Route
++	 *     [0] Route to this node
++	 *     [1] Route to Link 0
++	 *     [2] Route to Link 1
++	 *     [3] Route to Link 2
++	 * [19:16] Broadcast route
++	 *     [0] Route to this node
++	 *     [1] Route to Link 0
++	 *     [2] Route to Link 1
++	 *     [3] Route to Link 2
++	 */
++
++	uint32_t ret=0x00010101; /* default row entry */
++
++	static const unsigned int rows_2p[2][2] = {
++		{ 0x00050101, 0x00010404 },
++		{ 0x00010404, 0x00050101 }
++	};
++
++	if(maxnodes>2) {
++		print_debug("this mainboard is only designed for 2 cpus\r\n");
++		maxnodes=2;
++	}
++
++	if (!(node>=maxnodes || row>=maxnodes)) {
++		ret=rows_2p[node][row];
++	}
++
++	return ret;
++}
++
++static inline void activate_spd_rom(const struct mem_controller *ctrl)
++{
++	/* nothing to do */
++}
++
++static inline int spd_read_byte(unsigned device, unsigned address)
++{
++	return smbus_read_byte(device, address);
++}
++
++#include "northbridge/amd/amdk8/raminit.c"
++#include "northbridge/amd/amdk8/coherent_ht.c"
++#include "northbridge/amd/amdk8/incoherent_ht.c"
++#include "sdram/generic_sdram.c"
++#include "northbridge/amd/amdk8/resourcemap.c"
++#include "cpu/amd/dualcore/dualcore.c"
++
++#define FIRST_CPU  1
++#define SECOND_CPU 1
++#define TOTAL_CPUS (FIRST_CPU + SECOND_CPU)
++static void main(unsigned long bist)
++{
++	static const struct mem_controller cpu[] = {
++#if FIRST_CPU
++		{
++			.node_id = 0,
++			.f0 = PCI_DEV(0, 0x18, 0),
++			.f1 = PCI_DEV(0, 0x18, 1),
++			.f2 = PCI_DEV(0, 0x18, 2),
++			.f3 = PCI_DEV(0, 0x18, 3),
++			.channel0 = { (0xa<<3)|0, (0xa<<3)|2, 0, 0 },
++			.channel1 = { (0xa<<3)|1, (0xa<<3)|3, 0, 0 },
++		},
++#endif
++#if SECOND_CPU
++		{
++			.node_id = 1,
++			.f0 = PCI_DEV(0, 0x19, 0),
++			.f1 = PCI_DEV(0, 0x19, 1),
++			.f2 = PCI_DEV(0, 0x19, 2),
++			.f3 = PCI_DEV(0, 0x19, 3),
++			.channel0 = { (0xa<<3)|4, (0xa<<3)|6, 0, 0 },
++			.channel1 = { (0xa<<3)|5, (0xa<<3)|7, 0, 0 },
++		},
++#endif
++	};
++
++	int needs_reset;
++        unsigned nodeid;
++
++	if (bist == 0) {
++		k8_init_and_stop_secondaries();
++	}
++	/* Setup the console */	
++	w83627hf_enable_serial(SERIAL_DEV, TTYS0_BASE);
++	uart_init();
++	console_init();
++
++	/* Halt if there was a built in self test failure */
++	report_bist_failure(bist);
++
++	setup_default_resource_map();
++	needs_reset = setup_coherent_ht_domain();
++	needs_reset |= ht_setup_chain(PCI_DEV(0, 0x18, 0), 0x80);
++	if (needs_reset) {
++		print_info("ht reset -\r\n");
++		soft_reset();
++	}
++	
++#if 0
++	print_pci_devices();
++#endif
++
++	enable_smbus();
++
++#if 0
++	dump_spd_registers(&cpu[0]);
++#endif
++
++	memreset_setup();
++	sdram_initialize(sizeof(cpu)/sizeof(cpu[0]), cpu);
++
++#if 0
++	dump_pci_devices();
++	dump_pci_device(PCI_DEV(0, 0x18, 2));
++#endif
++}
+diff --git a/src/mainboard/iwill/dk8s2/chip.h b/src/mainboard/iwill/dk8s2/chip.h
+new file mode 100644
+index 0000000000..af9438c913
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/chip.h
+@@ -0,0 +1,5 @@
++extern struct chip_operations mainboard_iwill_dk8s2_ops;
++
++struct mainboard_iwill_dk8s2_config {
++	int nothing;
++};
+diff --git a/src/mainboard/iwill/dk8s2/cmos.layout b/src/mainboard/iwill/dk8s2/cmos.layout
+new file mode 100644
+index 0000000000..5eb88b9a5a
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/cmos.layout
+@@ -0,0 +1,98 @@
++entries
++
++#start-bit length  config config-ID    name
++#0            8       r       0        seconds
++#8            8       r       0        alarm_seconds
++#16           8       r       0        minutes
++#24           8       r       0        alarm_minutes
++#32           8       r       0        hours
++#40           8       r       0        alarm_hours
++#48           8       r       0        day_of_week
++#56           8       r       0        day_of_month
++#64           8       r       0        month
++#72           8       r       0        year
++#80           4       r       0        rate_select
++#84           3       r       0        REF_Clock
++#87           1       r       0        UIP
++#88           1       r       0        auto_switch_DST
++#89           1       r       0        24_hour_mode
++#90           1       r       0        binary_values_enable
++#91           1       r       0        square-wave_out_enable
++#92           1       r       0        update_finished_enable
++#93           1       r       0        alarm_interrupt_enable
++#94           1       r       0        periodic_interrupt_enable
++#95           1       r       0        disable_clock_updates
++#96         288       r       0        temporary_filler
++0          384       r       0        reserved_memory
++384          1       e       4        boot_option
++385          1       e       4        last_boot
++386          1       e       1        ECC_memory
++388          4       r       0        reboot_bits
++392          3       e       5        baud_rate
++395          1       e       1        hw_scrubber
++396          1       e       1        interleave_chip_selects
++397          2       e       8        max_mem_clock
++399	     1	     e	     2	      dual_core
++400          1       e       1        power_on_after_fail
++412          4       e       6        debug_level
++416          4       e       7        boot_first
++420          4       e       7        boot_second
++424          4       e       7        boot_third
++428          4       h       0        boot_index
++432	     8       h       0        boot_countdown
++440          4       e       9        slow_cpu
++444          1       e       1        nmi
++445          1       e       1        iommu
++728        256       h       0        user_data
++984         16       h       0        check_sum
++# Reserve the extended AMD configuration registers
++1000        24       r       0        reserved_memory
++
++
++
++enumerations
++
++#ID value   text
++1     0     Disable
++1     1     Enable
++2     0     Enable
++2     1     Disable
++4     0     Fallback
++4     1     Normal
++5     0     115200
++5     1     57600
++5     2     38400
++5     3     19200
++5     4     9600
++5     5     4800
++5     6     2400
++5     7     1200
++6     6     Notice
++6     7     Info
++6     8     Debug
++6     9     Spew
++7     0     Network
++7     1     HDD
++7     2     Floppy
++7     8     Fallback_Network
++7     9     Fallback_HDD
++7     10    Fallback_Floppy
++#7     3     ROM
++8     0     DDR400
++8     1     DDR333
++8     2     DDR266
++8     3     DDR200
++9     0     off
++9     1     87.5%
++9     2     75.0%
++9     3     62.5%
++9     4     50.0%
++9     5     37.5%
++9     6     25.0%
++9     7     12.5%
++
++checksums
++
++checksum 392 983 984
++
++
+diff --git a/src/mainboard/iwill/dk8s2/failover.c b/src/mainboard/iwill/dk8s2/failover.c
+new file mode 100644
+index 0000000000..262fdd60bd
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/failover.c
+@@ -0,0 +1,66 @@
++#define ASSEMBLY 1
++#include <stdint.h>
++#include <device/pci_def.h>
++#include <device/pci_ids.h>
++#include <arch/io.h>
++#include <arch/romcc_io.h>
++#include <cpu/x86/lapic.h>
++#include "pc80/mc146818rtc_early.c"
++#include "southbridge/amd/amd8111/amd8111_enable_rom.c"
++#include "northbridge/amd/amdk8/early_ht.c"
++#include "cpu/x86/lapic/boot_cpu.c"
++#include "cpu/x86/mtrr/earlymtrr.c"
++#include "northbridge/amd/amdk8/reset_test.c"
++
++static unsigned long main(unsigned long bist)
++{
++        unsigned nodeid;
++
++	/* Make cerain my local apic is useable */
++	enable_lapic();
++
++	/* Is this a cpu only reset? */
++	if (early_mtrr_init_detected()) {
++		if (last_boot_normal()) {
++			goto normal_image;
++		} else {
++			goto fallback_image;
++		}
++	}
++	/* Is this a secondary cpu? */
++	if (!boot_cpu()) {
++		if (last_boot_normal()) {
++			goto normal_image;
++		} else {
++			goto fallback_image;
++		}
++	}
++	
++
++	/* Nothing special needs to be done to find bus 0 */
++	/* Allow the HT devices to be found */
++	enumerate_ht_chain();
++	
++	/* Setup the 8111 */
++	amd8111_enable_rom();
++
++	/* Is this a deliberate reset by the bios */
++	if (bios_reset_detected() && last_boot_normal()) {
++		goto normal_image;
++	}
++	/* This is the primary cpu how should I boot? */
++	else if (do_normal_boot()) {
++		goto normal_image;
++	}
++	else {
++		goto fallback_image;
++	}
++ normal_image:
++	asm volatile ("jmp __normal_image" 
++		: /* outputs */ 
++		: "a" (bist) /* inputs */
++		: /* clobbers */
++		);
++ fallback_image:
++	return bist;
++}
+diff --git a/src/mainboard/iwill/dk8s2/irq_tables.c b/src/mainboard/iwill/dk8s2/irq_tables.c
+new file mode 100644
+index 0000000000..28c90e0f85
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/irq_tables.c
+@@ -0,0 +1,41 @@
++/* This file was generated by getpir.c, do not modify! 
++   (but if you do, please run checkpir on it to verify)
++ * Contains the IRQ Routing Table dumped directly from your memory, which BIOS sets up
++ *
++ * Documentation at : http://www.microsoft.com/hwdev/busbios/PCIIRQ.HTM
++*/
++
++#include <arch/pirq_routing.h>
++
++const struct irq_routing_table intel_irq_routing_table = {
++	PIRQ_SIGNATURE,  /* u32 signature */
++	PIRQ_VERSION,    /* u16 version   */
++	32+16*12,	 /* there can be total 12 devices on the bus */
++	0x00,		 /* Where the interrupt router lies (bus) */
++	(0x07<<3)|0x3,   /* Where the interrupt router lies (dev) */
++	0,		 /* IRQs devoted exclusively to PCI usage */
++	0x1022,		 /* Vendor */
++	0x746b,		 /* Device */
++	0,		 /* Crap (miniport) */
++	{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, /* u8 rfu[11] */
++	0x6d,         /*  u8 checksum , this hase to set to some value that would give 0 after the sum of all bytes for this structure (including checksum) */
++	{
++		/* bus,     dev|fn,   {link, bitmap}, {link, bitmap}, {link, bitmap}, {link, bitmap},  slot, rfu */
++		{0x00,(0x07<<3)|0x0, {{0x01, 0xdef8}, {0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0x0def8}}, 0x0, 0x0},
++		{0x03,(0x00<<3)|0x0, {{0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x0000}, {0x04, 0x0def8}}, 0x0, 0x0},
++		{0x02,(0x01<<3)|0x0, {{0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0x0def8}}, 0x1, 0x0},
++		{0x02,(0x02<<3)|0x0, {{0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0xdef8}, {0x02, 0x0def8}}, 0x2, 0x0},
++		{0x01,(0x01<<3)|0x0, {{0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0x0def8}}, 0x3, 0x0},
++		{0x01,(0x02<<3)|0x0, {{0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0xdef8}, {0x02, 0x0def8}}, 0x4, 0x0},
++		{0x03,(0x04<<3)|0x0, {{0x01, 0xdef8}, {0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0x0def8}}, 0x5, 0x0},
++		{0x03,(0x05<<3)|0x0, {{0x02, 0xdef8}, {0x03, 0xdef8}, {0x04, 0xdef8}, {0x01, 0x0def8}}, 0x6, 0x0},
++		{0x03,(0x06<<3)|0x0, {{0x03, 0xdef8}, {0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x00000}}, 0x0, 0x0},
++		{0x02,(0x03<<3)|0x0, {{0x04, 0xdef8}, {0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x00000}}, 0x0, 0x0},
++		{0x02,(0x04<<3)|0x0, {{0x01, 0xdef8}, {0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x00000}}, 0x0, 0x0},
++		{0x02,(0x05<<3)|0x0, {{0x02, 0xdef8}, {0x00, 0x0000}, {0x00, 0x0000}, {0x00, 0x00000}}, 0x0, 0x0},
++	}
++};
++unsigned long write_pirq_routing_table(unsigned long addr)
++{
++        return copy_pirq_routing_table(addr);
++}
+diff --git a/src/mainboard/iwill/dk8s2/mainboard.c b/src/mainboard/iwill/dk8s2/mainboard.c
+new file mode 100644
+index 0000000000..abfbb29bd7
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/mainboard.c
+@@ -0,0 +1,11 @@
++#include <console/console.h>
++#include <device/device.h>
++#include <device/pci.h>
++#include <device/pci_ids.h>
++#include <device/pci_ops.h>
++#include "chip.h"
++
++struct chip_operations mainboard_iwill_dk8s2_ops = {
++	CHIP_NAME("Iwill DK8S2 mainboard")
++};
++
+diff --git a/src/mainboard/iwill/dk8s2/mptable.c b/src/mainboard/iwill/dk8s2/mptable.c
+new file mode 100644
+index 0000000000..34e6037c21
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/mptable.c
+@@ -0,0 +1,232 @@
++#include <console/console.h>
++#include <arch/smp/mpspec.h>
++#include <device/pci.h>
++#include <string.h>
++#include <stdint.h>
++
++void *smp_write_config_table(void *v)
++{
++	static const char sig[4] = "PCMP";
++	static const char oem[8] = "IWILL   ";
++	static const char productid[12] = "DK8X        ";
++	struct mp_config_table *mc;
++	unsigned char bus_num;
++	unsigned char bus_isa;
++	unsigned char bus_8131_1;
++	unsigned char bus_8131_2;
++	unsigned char bus_8111_1;
++
++	mc = (void *)(((char *)v) + SMP_FLOATING_TABLE_LEN);
++	memset(mc, 0, sizeof(*mc));
++
++	memcpy(mc->mpc_signature, sig, sizeof(sig));
++	mc->mpc_length = sizeof(*mc); /* initially just the header */
++	mc->mpc_spec = 0x04;
++	mc->mpc_checksum = 0; /* not yet computed */
++	memcpy(mc->mpc_oem, oem, sizeof(oem));
++	memcpy(mc->mpc_productid, productid, sizeof(productid));
++	mc->mpc_oemptr = 0;
++	mc->mpc_oemsize = 0;
++	mc->mpc_entry_count = 0; /* No entries yet... */
++	mc->mpc_lapic = LAPIC_ADDR;
++	mc->mpe_length = 0;
++	mc->mpe_checksum = 0;
++	mc->reserved = 0;
++
++	smp_write_processors(mc);
++
++	{
++		device_t dev;
++
++		/* 8111 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x03,0));
++		if (dev) {
++			bus_8111_1 = pci_read_config8(dev, PCI_SECONDARY_BUS);
++			bus_isa	   = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
++			bus_isa++;
++		}
++		else {
++			printk_debug("ERROR - could not find PCI 1:03.0, using defaults\n");
++
++			bus_8111_1 = 4;
++			bus_isa = 5;
++		}
++		/* 8131-1 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x01,0));
++		if (dev) {
++			bus_8131_1 = pci_read_config8(dev, PCI_SECONDARY_BUS);
++
++		}
++		else {
++			printk_debug("ERROR - could not find PCI 1:01.0, using defaults\n");
++
++			bus_8131_1 = 2;
++		}
++		/* 8131-2 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x02,0));
++		if (dev) {
++			bus_8131_2 = pci_read_config8(dev, PCI_SECONDARY_BUS);
++
++		}
++		else {
++			printk_debug("ERROR - could not find PCI 1:02.0, using defaults\n");
++
++			bus_8131_2 = 3;
++		}
++	}
++
++	/* define bus and isa numbers */
++	for(bus_num = 0; bus_num < bus_isa; bus_num++) {
++		smp_write_bus(mc, bus_num, "PCI	  ");
++	}
++	smp_write_bus(mc, bus_isa, "ISA	  ");
++
++	/* IOAPIC handling */
++	smp_write_ioapic(mc, 2, 0x11, 0xfec00000);
++	{
++		device_t dev;
++		struct resource *res;
++		/* 8131 apic 3 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x01,1));
++		if (dev) {
++			res = find_resource(dev, PCI_BASE_ADDRESS_0);
++			if (res) {
++				smp_write_ioapic(mc, 0x03, 0x11, res->base);
++			}
++		}
++		/* 8131 apic 4 */
++		dev = dev_find_slot(1, PCI_DEVFN(0x02,1));
++		if (dev) {
++			res = find_resource(dev, PCI_BASE_ADDRESS_0);
++			if (res) {
++				smp_write_ioapic(mc, 0x04, 0x11, res->base);
++			}
++		}
++	}
++
++	/* ISA backward compatibility interrupts  */
++	smp_write_intsrc(mc, mp_ExtINT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x00, 0x02, 0x00);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x01, 0x02, 0x01);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x00, 0x02, 0x02);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x03, 0x02, 0x03);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x04, 0x02, 0x04);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x05, 0x02, 0x05);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x06, 0x02, 0x06);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x07, 0x02, 0x07);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x08, 0x02, 0x08);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x09, 0x02, 0x09);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0a, 0x02, 0x0a);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0b, 0x02, 0x0b);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0c, 0x02, 0x0c);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0d, 0x02, 0x0d);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0e, 0x02, 0x0e);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x0f, 0x02, 0x0f);
++
++	/* Standard local interrupt assignments */
++	smp_write_lintsrc(mc, mp_ExtINT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x00, MP_APIC_ALL, 0x00);
++	smp_write_lintsrc(mc, mp_NMI, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_isa, 0x00, MP_APIC_ALL, 0x01);
++
++
++	/* PCI Slot 1 */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (1<<2)|0, 0x02, 0x11);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (1<<2)|1, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (1<<2)|2, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (1<<2)|3, 0x02, 0x10);
++
++	/* PCI Slot 2 */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (2<<2)|0, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (2<<2)|1, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (2<<2)|2, 0x02, 0x10);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_2, (2<<2)|3, 0x02, 0x11);
++
++	/* PCI Slot 3 */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (1<<2)|0, 0x02, 0x11);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (1<<2)|1, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (1<<2)|2, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (1<<2)|3, 0x02, 0x10);
++
++	/* PCI Slot 4 */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (2<<2)|0, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (2<<2)|1, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (2<<2)|2, 0x02, 0x10);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (2<<2)|3, 0x02, 0x11);
++
++	/* PCI Slot 5 */
++#warning "FIXME get the irqs right, it's just hacked to work for now"
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (5<<2)|0, 0x02, 0x11);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (5<<2)|1, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (5<<2)|2, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (5<<2)|3, 0x02, 0x10);
++
++	/* PCI Slot 6 */
++#warning "FIXME get the irqs right, it's just hacked to work for now"
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (4<<2)|0, 0x02, 0x10);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (4<<2)|1, 0x02, 0x11);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (4<<2)|2, 0x02, 0x12);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8111_1, (4<<2)|3, 0x02, 0x13);
++
++	/* On board nics */
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (3<<2)|0, 0x02, 0x13);
++	smp_write_intsrc(mc, mp_INT, MP_IRQ_TRIGGER_DEFAULT|MP_IRQ_POLARITY_DEFAULT,
++		bus_8131_1, (4<<2)|0, 0x02, 0x13);
++
++	/* There is no extension information... */
++
++	/* Compute the checksums */
++	mc->mpe_checksum = smp_compute_checksum(smp_next_mpc_entry(mc), mc->mpe_length);
++	mc->mpc_checksum = smp_compute_checksum(mc, mc->mpc_length);
++	printk_debug("Wrote the mp table end at: %p - %p\n",
++		mc, smp_next_mpe_entry(mc));
++	return smp_next_mpe_entry(mc);
++}
++
++unsigned long write_smp_table(unsigned long addr)
++{
++	void *v;
++	v = smp_write_floating_table(addr);
++	return (unsigned long)smp_write_config_table(v);
++}
++
+diff --git a/src/mainboard/iwill/dk8s2/reset.c b/src/mainboard/iwill/dk8s2/reset.c
+new file mode 100644
+index 0000000000..3db3956ec6
+--- /dev/null
++++ b/src/mainboard/iwill/dk8s2/reset.c
+@@ -0,0 +1,6 @@
++#include "../../../southbridge/amd/amd8111/amd8111_reset.c"
++
++void hard_reset(void)
++{
++	amd8111_hard_reset(0, 0);
++}
+diff --git a/targets/iwill/dk8_htx/Config.lb b/targets/iwill/dk8_htx/Config.lb
+index ae7d8be730..3433784dcf 100644
+--- a/targets/iwill/dk8_htx/Config.lb
++++ b/targets/iwill/dk8_htx/Config.lb
+@@ -1,74 +1,74 @@
+ 
+ target dk8_htx
+-mainboard Iwill/dk8_htx
++mainboard iwill/dk8_htx
+ 
+ # serengeti_leopard
+ romimage "normal"
+ #       48K for SCSI FW
+ #        option ROM_SIZE = 475136
+ #       48K for SCSI FW and 48K for ATI ROM
+ #       option ROM_SIZE = 425984 
+ #       64K for Etherboot
+ #        option ROM_SIZE = 458752 
+ 	option USE_FAILOVER_IMAGE=0
+ 	option USE_FALLBACK_IMAGE=0
+ #	option ROM_IMAGE_SIZE=0x13800
+ #	option ROM_IMAGE_SIZE=0x17800
+ #	option ROM_IMAGE_SIZE=0x15800
+ 	option ROM_IMAGE_SIZE=0x20000
+ 	option XIP_ROM_SIZE=0x20000
+ 	option LINUXBIOS_EXTRA_VERSION="$(shell cat ../../VERSION)_Normal"
+ #       payload ../../../payloads/tg3--ide_disk.zelf
+ #        payload ../../../payloads/filo.elf
+ #        payload ../../../payloads/filo_mem.elf
+ #        payload ../../../payloads/filo.zelf
+ #        payload ../../../payloads/tg3--filo_hda2.zelf
+ #	payload ../../../payloads/tg3.zelf
+ #	payload ../../../payloads/tg3_vga.zelf
+ #	payload ../../../../payloads/tg3--filo_hda2_vga.zelf
+ 	payload ../../../../payloads/tg3--filo_hda2_vga_5_4.zelf
+ #       payload ../../../../payloads/e1000--filo.zelf
+ #	payload ../../../payloads/tg3_com2.zelf
+ #        payload ../../../payloads/tg3--e1000--filo.zelf
+ #        payload ../../../payloads/tg3--eepro100--e1000--filo_hda2.zelf
+ #	payload ../../../payloads/tg3--eepro100--e1000--filo_hda2_5.3.zelf
+ #	payload ../../../payloads/tg3--eepro100--e1000--filo_hda2_com2.zelf
+ end
+ 
+ romimage "fallback" 
+ 	option USE_FAILOVER_IMAGE=0
+ 	option USE_FALLBACK_IMAGE=1
+ #	option ROM_IMAGE_SIZE=0x13800
+ #	option ROM_IMAGE_SIZE=0x17800
+ #	option ROM_IMAGE_SIZE=0x15800
+ 	option ROM_IMAGE_SIZE=0x20000
+ 	option XIP_ROM_SIZE=0x20000
+ 	option LINUXBIOS_EXTRA_VERSION="$(shell cat ../../VERSION)_Fallback"
+ #       payload ../../../payloads/tg3--ide_disk.zelf
+ #        payload ../../../payloads/filo.elf
+ #        payload ../../../payloads/filo_mem.elf
+ #        payload ../../../payloads/filo.zelf
+ #        payload ../../../payloads/tg3--filo_hda2.zelf
+ #	payload ../../../payloads/tg3.zelf
+ #	payload ../../../payloads/tg3_vga.zelf
+ #	payload ../../../../payloads/memtest
+ #	payload ../../../../payloads/tg3--filo_hda2_vga.zelf
+ 	payload ../../../../payloads/tg3--filo_hda2_vga_5_4.zelf
+ #	payload ../../../payloads/tg3_com2.zelf
+ #       payload ../../../../payloads/e1000--filo.zelf
+ #        payload ../../../payloads/tg3--e1000--filo.zelf
+ #        payload ../../../payloads/tg3--eepro100--e1000--filo_hda2.zelf
+ #	payload ../../../payloads/tg3--eepro100--e1000--filo_hda2_5.3.zelf
+ #	payload ../../../payloads/tg3--eepro100--e1000--filo_hda2_com2.zelf
+ end
+ 
+ romimage "failover"
+ 	option USE_FAILOVER_IMAGE=1
+         option USE_FALLBACK_IMAGE=0
+         option ROM_IMAGE_SIZE=FAILOVER_SIZE
+         option XIP_ROM_SIZE=FAILOVER_SIZE
+         option LINUXBIOS_EXTRA_VERSION="$(shell cat ../../VERSION)_Failover"
+ end
+ 
+ buildrom ./linuxbios.rom ROM_SIZE "normal" "fallback" "failover"
+ #buildrom ./linuxbios.rom ROM_SIZE "normal" "fallback"
+diff --git a/targets/iwill/dk8s2/Config.lb b/targets/iwill/dk8s2/Config.lb
+index 64419756e4..efb0592847 100644
+--- a/targets/iwill/dk8s2/Config.lb
++++ b/targets/iwill/dk8s2/Config.lb
+@@ -1,167 +1,167 @@
+ # Sample config file for 
+ # the Iwill DK8S2
+ # This will make a target directory of ./dk8s2
+ 
+ target dk8s2
+ 
+-mainboard Iwill/DK8S2
++mainboard iwill/dk8s2
+ 
+ option HAVE_HARD_RESET=1
+ 
+ option HAVE_OPTION_TABLE=1
+ option HAVE_MP_TABLE=1
+ option ROM_SIZE=1024*1024
+ 
+ option HAVE_FALLBACK_BOOT=1
+   
+ #option CONFIG_LSI_SCSI_FW_FIXUP=1
+ 
+ 
+ #
+ ###
+ ### Build code to export a programmable irq routing table
+ ###
+ option HAVE_PIRQ_TABLE=1
+ option IRQ_SLOT_COUNT=12
+ #
+ ###
+ ### Build code for SMP support
+ ### Only worry about 2 micro processors
+ ###
+ option CONFIG_SMP=1
+ option CONFIG_MAX_CPUS=2
+ #option CONFIG_LOGICAL_CPUS=2
+ option CONFIG_MAX_PHYSICAL_CPUS=2
+ #
+ ###
+ ### Build code to setup a generic IOAPIC
+ ###
+ option CONFIG_IOAPIC=1
+ #
+ ###
+ ### MEMORY_HOLE instructs earlymtrr.inc to
+ ### enable caching from 0-640KB and to disable 
+ ### caching from 640KB-1MB using fixed MTRRs 
+ ###
+ ### Enabling this option breaks SMP because secondary
+ ### CPU identification depends on only variable MTRRs
+ ### being enabled.
+ ###
+ #option MEMORY_HOLE=0
+ #
+ ###
+ ### Clean up the motherboard id strings
+ ###
+ option MAINBOARD_PART_NUMBER="DK8S2"
+ option MAINBOARD_VENDOR="Iwill"
+ #
+ ###
+ ### Compute the location and size of where this firmware image
+ ### (linuxBIOS plus bootloader) will live in the boot rom chip.
+ ###
+ #option FALLBACK_SIZE=524288
+ #option FALLBACK_SIZE=98304
+ option FALLBACK_SIZE=131072
+ 
+ ## ROM_IMAGE_SIZE is the amount of space to allow linuxBIOS to occupy.
+ option ROM_IMAGE_SIZE=65536
+  
+ 
+ ###
+ ### Compute where this copy of linuxBIOS will start in the boot rom
+ ###
+ #
+ ###
+ 
+ ## We do use compressed image
+ #option CONFIG_COMPRESS=1
+ 
+ option CONFIG_CONSOLE_SERIAL8250=1
+ option TTYS0_BAUD=115200
+ 
+ ##
+ ### Select the linuxBIOS loglevel
+ ##
+ ## EMERG      1   system is unusable
+ ## ALERT      2   action must be taken immediately
+ ## CRIT       3   critical conditions
+ ## ERR        4   error conditions
+ ## WARNING    5   warning conditions
+ ## NOTICE     6   normal but significant condition
+ ## INFO       7   informational
+ ## DEBUG      8   debug-level messages
+ ## SPEW       9   Way too many details
+ 
+ ## Request this level of debugging output
+ option DEFAULT_CONSOLE_LOGLEVEL=7
+ ## At a maximum only compile in this level of debugging
+ option MAXIMUM_CONSOLE_LOGLEVEL=7
+ 
+ #option DEBUG=1
+ 
+ #
+ 
+ ## LinuxBIOS C code runs at this location in RAM
+ option _RAMBASE=0x004000
+ 
+ ##
+ ## Use a 32K stack
+ ##
+ option STACK_SIZE=0x8000 
+ 
+ ##
+ ## Use a 56K heap
+ ##
+ option HEAP_SIZE=0xe000
+ 
+ #
+ ###
+ ### Compute the start location and size size of
+ ### The linuxBIOS bootloader.
+ ###
+ option CONFIG_ROM_STREAM     = 1
+ 
+ #
+ # 
+ romimage "normal"
+ #	48K for SCSI FW
+ #        option ROM_SIZE = 512*1024-48*1024
+ #	48K for SCSI FW and 48K for ATI ROM
+ #	option ROM_SIZE = 512*1024-48*1024-48*1024
+         option LINUXBIOS_EXTRA_VERSION="$(shell cat ../../VERSION)_Normal"
+ 	option USE_FALLBACK_IMAGE=0
+ 	option ROM_SECTION_SIZE  = (ROM_SIZE - FALLBACK_SIZE)
+ 	option ROM_SECTION_OFFSET= 0
+ 
+ 	option PAYLOAD_SIZE            = (ROM_SECTION_SIZE - ROM_IMAGE_SIZE)
+ 	option CONFIG_ROM_STREAM_START = (0xffffffff - ROM_SIZE + ROM_SECTION_OFFSET + 1)
+ 	option _ROMBASE      = (CONFIG_ROM_STREAM_START + PAYLOAD_SIZE)
+ 
+ #	option XIP_ROM_SIZE = FALLBACK_SIZE
+         option XIP_ROM_SIZE = 65536
+ 
+ 	option XIP_ROM_BASE = (_ROMBASE + ROM_IMAGE_SIZE - XIP_ROM_SIZE)
+ 
+ 	payload /usr/src/filo-0.4.1_btext/filo.elf
+ #	payload /usr/src/filo-0.4.2/filo.elf
+ end
+ 
+ romimage "fallback" 
+ 	option LINUXBIOS_EXTRA_VERSION="$(shell cat ../../VERSION)_Fallback"
+ 	option USE_FALLBACK_IMAGE=1
+ 	option ROM_SECTION_SIZE  = FALLBACK_SIZE
+ 	option ROM_SECTION_OFFSET= (ROM_SIZE - FALLBACK_SIZE)
+ 
+ 	option PAYLOAD_SIZE            = (ROM_SECTION_SIZE - ROM_IMAGE_SIZE)
+ 	option CONFIG_ROM_STREAM_START = (0xffffffff - ROM_SIZE + ROM_SECTION_OFFSET + 1)
+ 	option _ROMBASE      = (CONFIG_ROM_STREAM_START + PAYLOAD_SIZE)
+ 
+ #	option XIP_ROM_SIZE = FALLBACK_SIZE
+ 	option XIP_ROM_SIZE = 65536
+ 	option XIP_ROM_BASE = (_ROMBASE + ROM_IMAGE_SIZE - XIP_ROM_SIZE)
+ 
+ 	payload ../../../payloads/filo.elf
+ #	payload /usr/src/filo-0.4.2/filo.elf
+ end
+ 
+ buildrom ./linuxbios.rom ROM_SIZE "normal" "fallback"

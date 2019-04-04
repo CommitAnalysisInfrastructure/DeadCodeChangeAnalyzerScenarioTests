@@ -1,0 +1,651 @@
+commit c3e728f.txt
+Author: Jordan Crouse <jordan.crouse@amd.com>
+Date:   Wed Apr 9 23:05:59 2008 +0000
+
+    libpayload: Implement gcc wrappers for libpayload
+    
+    libpayload uses a ton of flags and other scary gcc and ld options.  These
+    wrappers hide most of that from the user, so that using libpayload is as
+    easy as lpgcc -o hello hello.c
+    
+    Signed-off-by: Jordan Crouse <jordan.crouse@amd.com>
+    Acked-by: Uwe Hermann <uwe@hermann-uwe.de>
+    
+    
+    
+    git-svn-id: svn://svn.coreboot.org/coreboot/trunk@3226 2b7e53f0-3cfb-0310-b3e9-8179ed1497e1
+
+diff --git a/payloads/libpayload/Makefile b/payloads/libpayload/Makefile
+index 959f968f83..ff6ca617b0 100644
+--- a/payloads/libpayload/Makefile
++++ b/payloads/libpayload/Makefile
+@@ -1,108 +1,127 @@
+ ##
+ ## This file is part of the libpayload project.
+ ##
+ ## Copyright (C) 2008 Advanced Micro Devices, Inc.
+ ##
+ ## Redistribution and use in source and binary forms, with or without
+ ## modification, are permitted provided that the following conditions
+ ## are met:
+ ## 1. Redistributions of source code must retain the above copyright
+ ##    notice, this list of conditions and the following disclaimer.
+ ## 2. Redistributions in binary form must reproduce the above copyright
+ ##    notice, this list of conditions and the following disclaimer in the
+ ##    documentation and/or other materials provided with the distribution.
+ ## 3. The name of the author may not be used to endorse or promote products
+ ##    derived from this software without specific prior written permission.
+ ##
+ ## THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ ## ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ ## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ## ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ ## FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ ## DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ ## OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ ## HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ ## LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ ## OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ ## SUCH DAMAGE.
+ ##
+ 
+ BASE_DIR=$(shell pwd)
+ KCONFIG_DIR=util/kconfig
++DESTDIR=/opt
+ 
+ ifeq (.config, $(wildcard .config))
+ dot-config := 1
+ else
+ dot-config := 0
+ config-targets := 1
+ endif
+ 
+ ifneq ($(filter textconfig oldconfig defconfig menuconfig,$(MAKECMDGOALS)),)
+ config-targets := 1
+ dot-config := 0
+ endif
+ 
+ ifeq ($(dot-config),0)
+ all: .config
+ 
+ .config: oldconfig
+ 	@echo "Configuration completed - type make to build libpayload"
+ else
+ -include .config
+-endif
+ 
+-PLATFORM-$(CONFIG_TARGET_I386) += i386/Makefile.inc
++ARCHDIR-$(CONFIG_TARGET_I386) := i386
++
++PLATFORM-y += $(ARCHDIR-y)/Makefile.inc
+ TARGETS-y :=
+ 
+ BUILD-y := crypto/Makefile.inc libc/Makefile.inc drivers/Makefile.inc
+ BUILD-$(CONFIG_TINYCURSES) += curses/Makefile.inc
+ 
+ include $(PLATFORM-y) $(BUILD-y)
+ 
+ INCLUDES := -I./include
+ INCLUDES += -I$(shell $(CC) -print-search-dirs | head -n 1 | cut -d' ' -f2)include
+ # TODO: Re-add -Os as soon as we find out why it caused problems.
+ CFLAGS := -Wall -Werror -fno-stack-protector -nostdinc $(INCLUDES)
+ 
+-libpayload.a: $(TARGETS-y)
+-	$(AR) rc $@ $(TARGETS-y)
++lib: lib/libpayload.a lib/$(ARCHDIR-y)/head.o
++
++lib/libpayload.a: $(TARGETS-y)
++	@ $(AR) rc $@ $(TARGETS-y)
++
++lib/$(ARCHDIR-y)/head.o: $(ARCHDIR-y)/head.o
++	@ mkdir -p lib/$(ARCHDIR-y)
++	@ cp $< $@
+ 
+ %.o: %.c
+ 	$(CC) -m32 $(CFLAGS) -c -o $@ $<
+ 
+ %.o: %.S
+ 	$(AS) --32 -o $@ $<
+ 
++install: lib
++	install -m 755 -d $(DESTDIR)/libpayload/lib
++	cp -r lib/* $(DESTDIR)/libpayload/lib/
++	install -m 755 -d $(DESTDIR)/libpayload/include
++	cp -r include/* $(DESTDIR)/libpayload/include/
++	install -m 755 -d $(DESTDIR)/libpayload/bin
++	install -m 755 bin/lpgcc $(DESTDIR)/libpayload/bin
++	install -m 755 bin/lpas $(DESTDIR)/libpayload/bin
++	install -m 644 bin/lp.functions $(DESTDIR)/libpayload/bin
++
+ clean:
+ 	@ rm -f $(TARGETS-y)
+-	@ rm -f libpayload.a
++	@ rm -f lib/libpayload.a lib/$(ARCHDIR-y)/head.o
+ 
+ distclean: clean
+ 	@ make -C $(KCONFIG_DIR) clean
+ 	@ rm -f $(KCONFIG_DIR)/lxdialog/lxdialog
+ 	@ rm -f .config .kconfig.d  include/autoconf.h
+-	
++endif
++
+ ifeq ($(config-targets),1)
+ 
+ $(KCONFIG_DIR)/conf:
+ 	make -C $(KCONFIG_DIR) conf
+ 
+ $(KCONFIG_DIR)/mconf:
+ 	make -C $(KCONFIG_DIR) mconf
+ 
+ $(KCONFIG_DIR)/lxdialog/lxdialog:
+ 	make -C $(KCONFIG_DIR)/lxdialog lxdialog
+ 
+ textconfig: $(KCONFIG_DIR)/conf
+ 	@$(KCONFIG_DIR)/conf $(BASE_DIR)/Config.in
+ 
+ oldconfig: $(KCONFIG_DIR)/conf
+ 	@$(KCONFIG_DIR)/conf -o $(BASE_DIR)/Config.in
+ 
+ defconfig: $(KCONFIG_DIR)/conf
+ 	@$(KCONFIG_DIR)/conf -d $(BASE_DIR)/Config.in
+ 
+ menuconfig: $(KCONFIG_DIR)/lxdialog/lxdialog $(KCONFIG_DIR)/mconf
+ 	@$(KCONFIG_DIR)/mconf $(BASE_DIR)/Config.in
+ 
+ endif
+diff --git a/payloads/libpayload/bin/lp.functions b/payloads/libpayload/bin/lp.functions
+new file mode 100644
+index 0000000000..21b6e918b8
+--- /dev/null
++++ b/payloads/libpayload/bin/lp.functions
+@@ -0,0 +1,60 @@
++## This file is part of the libpayload project.
++##
++## Copyright (C) 2008 Advanced Micro Devices, Inc.
++##
++## Redistribution and use in source and binary forms, with or without
++## modification, are permitted provided that the following conditions
++## are met:
++## 1. Redistributions of source code must retain the above copyright
++##    notice, this list of conditions and the following disclaimer.
++## 2. Redistributions in binary form must reproduce the above copyright
++##    notice, this list of conditions and the following disclaimer in the
++##    documentation and/or other materials provided with the distribution.
++## 3. The name of the author may not be used to endorse or promote products
++##    derived from this software without specific prior written permission.
++##
++## THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
++## ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++## ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++## FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++## DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++## OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++## HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++## LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++## OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++## SUCH DAMAGE.
++
++# Common functions used by the libpayload wrappers
++
++error() {
++	echo "Error: $1"
++	exit 1
++}
++
++warn() {
++	echo "Warning: $1"
++}
++
++# If the user didn't specify LIBPAYLOAD_PREFIX, then preload it
++# with the default prefix value
++
++if [ -z "$LIBPAYLOAD_PREFIX" ]; then
++	LIBPAYLOAD_PREFIX=$DEFAULT_PREFIX/libpayload
++fi
++
++# If we're lucky, then everything was installed correctly, and the
++# library is locatd in the same prefix as ourselves.  If not, then
++# use the value of LIBPAYLOAD_PREFIX
++
++if [ -f $BASE/../lib/libpayload.a ]; then
++	_LIBDIR=$BASE/../lib
++else
++	_LIBDIR=$LIBPAYLOAD_PREFIX/lib
++fi
++
++if [ -d $BASE/../include/ ]; then
++	_INCDIR=$BASE/../include
++else
++	_INCDIR=$LIBPAYLOAD_PREFIX/include
++fi
+diff --git a/payloads/libpayload/bin/lpas b/payloads/libpayload/bin/lpas
+new file mode 100755
+index 0000000000..37125b472d
+--- /dev/null
++++ b/payloads/libpayload/bin/lpas
+@@ -0,0 +1,72 @@
++#!/bin/sh
++## This file is part of the libpayload project.
++##
++## Copyright (C) 2008 Advanced Micro Devices, Inc.
++##
++## Redistribution and use in source and binary forms, with or without
++## modification, are permitted provided that the following conditions
++## are met:
++## 1. Redistributions of source code must retain the above copyright
++##    notice, this list of conditions and the following disclaimer.
++## 2. Redistributions in binary form must reproduce the above copyright
++##    notice, this list of conditions and the following disclaimer in the
++##    documentation and/or other materials provided with the distribution.
++## 3. The name of the author may not be used to endorse or promote products
++##    derived from this software without specific prior written permission.
++##
++## THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
++## ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++## ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++## FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++## DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++## OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++## HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++## LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++## OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++## SUCH DAMAGE.
++
++# AS wrapper for libpayload
++
++DEFAULT_PREFIX=/opt
++DEFAULT_AS=as
++
++BASE=`dirname $0`
++
++# This will set the _LIBDIR and _INCDIR variables used below
++. $BASE/lp.functions
++
++DEBUGME=0
++
++# This variable will contain the command line that the user wants to
++# pass to gas
++
++CMDLINE=
++
++# Process various flags that would change our behavior
++
++while [ $# -gt 0 ]; do
++	case $1 in
++	    --32)
++		shift
++		continue
++		;;
++	    --64)
++		error "Invalid option --64 - only 32 bit architectures are supported"
++		;;
++	    -debug-wrapper)
++		DEBUGME=1
++		shift
++		continue
++		;;
++	    *)
++		;;
++	esac
++
++	CMDLINE="$CMDLINE $1"
++	shift
++done
++
++_ASFLAGS="--32 -I$_INCDIR"
++
++$DEFAULT_AS $_ASFLAGS $CMDLINE
+diff --git a/payloads/libpayload/bin/lpgcc b/payloads/libpayload/bin/lpgcc
+new file mode 100755
+index 0000000000..bfd6c1b777
+--- /dev/null
++++ b/payloads/libpayload/bin/lpgcc
+@@ -0,0 +1,104 @@
++#!/bin/sh
++## This file is part of the libpayload project.
++##
++## Copyright (C) 2008 Advanced Micro Devices, Inc.
++##
++## Redistribution and use in source and binary forms, with or without
++## modification, are permitted provided that the following conditions
++## are met:
++## 1. Redistributions of source code must retain the above copyright
++##    notice, this list of conditions and the following disclaimer.
++## 2. Redistributions in binary form must reproduce the above copyright
++##    notice, this list of conditions and the following disclaimer in the
++##    documentation and/or other materials provided with the distribution.
++## 3. The name of the author may not be used to endorse or promote products
++##    derived from this software without specific prior written permission.
++##
++## THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
++## ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++## ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++## FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++## DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++## OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++## HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++## LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++## OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++## SUCH DAMAGE.
++
++# GCC wrapper for libpayload
++
++DEFAULT_PREFIX=/opt
++DEFAULT_CC=gcc
++
++BASE=`dirname $0`
++
++# This will set the _LIBDIR and _INCDIR variables used below
++. $BASE/lp.functions
++
++trygccoption() {
++	$DEFAULT_CC $1 -S -xc /dev/null -o .$$.tmp > /dev/null
++	rm -f .$$.tmp
++	return $?
++}
++
++DEBUGME=0
++DOLINK=1
++
++# This variable will contain the command line that the user wants to
++# pass to gas
++
++CMDLINE=
++
++# Process various flags that would change our behavior
++
++while [ $# -gt 0 ]; do
++	case $1 in
++	    -m32|-fno-stack-protector)
++		shift
++		continue
++		;;
++	    -m64)
++		error "Invalid option --64 - only 32 bit architectures are supported"
++		;;
++	    -c)
++		DOLINK=0
++		;;
++	    -debug-wrapper)
++		DEBUGME=1
++		shift
++		continue
++		;;
++	    *)
++		;;
++	esac
++
++	CMDLINE="$CMDLINE $1"
++	shift
++done
++
++_CFLAGS="-m32 -nostdinc -nostdlib -I$_INCDIR"
++
++# Check for the -fno-stack-protector silliness
++
++trygccoption -fno-stack-protector
++[ $? -eq 0 ] && _CFLAGS="$_CFLAGS -fno-stack-protector"
++
++_CFLAGS="$_CFLAGS -I`$DEFAULT_CC -m32 -print-search-dirs | head -n 1 | cut -d' ' -f2`include"
++
++_LDFLAGS="-Wl,-T,$_LIBDIR/libpayload.ldscript -static"
++
++if [ $DOLINK -eq 0 ]; then
++    if [ $DEBUGME -eq 1 ]; then
++    	echo "$DEFAULT_CC $_CFLAGS $CMDLINE"
++    fi
++
++    $DEFAULT_CC $_CFLAGS $CMDLINE
++else
++    _LIBGCC=`$DEFAULT_CC -m32 -print-libgcc-file-name`
++    if [ $DEBUGME -eq 1 ]; then
++	echo "$DEFAULT_CC $_CFLAGS $_LDFLAGS $CMDLINE $_LIBDIR/i386/head.o $_LIBDIR/libpayload.a $_LIBGCC"
++    fi
++
++    $DEFAULT_CC $_CFLAGS $_LDFLAGS $CMDLINE $_LIBDIR/i386/head.o $_LIBDIR/libpayload.a $_LIBGCC
++fi
+diff --git a/payloads/libpayload/lib/libpayload.ldscript b/payloads/libpayload/lib/libpayload.ldscript
+new file mode 100644
+index 0000000000..7ae49e5808
+--- /dev/null
++++ b/payloads/libpayload/lib/libpayload.ldscript
+@@ -0,0 +1,85 @@
++/*
++ * This file is part of the libpayload project.
++ *
++ * Copyright (C) 2008 Advanced Micro Devices, Inc.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions
++ * are met:
++ * 1. Redistributions of source code must retain the above copyright
++ *    notice, this list of conditions and the following disclaimer.
++ * 2. Redistributions in binary form must reproduce the above copyright
++ *    notice, this list of conditions and the following disclaimer in the
++ *    documentation and/or other materials provided with the distribution.
++ * 3. The name of the author may not be used to endorse or promote products
++ *    derived from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
++ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
++ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
++ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
++ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
++ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
++ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
++ * SUCH DAMAGE.
++ */
++
++BASE_ADDRESS = 0x100000;
++
++OUTPUT_FORMAT(elf32-i386)
++OUTPUT_ARCH(i386)
++
++ENTRY(_entry)
++
++HEAP_SIZE = 16384;
++STACK_SIZE = 16384;
++
++SECTIONS
++{
++	. = BASE_ADDRESS;
++
++	. = ALIGN(16);
++	_start = .;
++
++	.text : {
++		*(.text._entry)
++		*(.text)
++		*(.text.*)
++	}
++
++	.rodata : {
++		*(.rodata)
++		*(.rodata.*)
++	}
++
++	.data : {
++		*(.data)
++		*(.data.*)
++	}
++
++	.bss : {
++		*(.bss)
++		*(.bss.*)
++		*(COMMON)
++
++		/* Stack and heap */
++
++		. = ALIGN(16);
++		_heap = .;
++		. += HEAP_SIZE;
++		. = ALIGN(16);
++		_eheap = .;
++
++		_estack = .;
++		. += STACK_SIZE;
++		. = ALIGN(16);
++		_stack = .;
++	}
++
++	_end = .;
++
++	/DISCARD/ : { *(.comment) *(.note) *(.note.*) }
++}
+diff --git a/payloads/libpayload/libpayload.ldscript b/payloads/libpayload/libpayload.ldscript
+deleted file mode 100644
+index 7ae49e5808..0000000000
+--- a/payloads/libpayload/libpayload.ldscript
++++ /dev/null
+@@ -1,85 +0,0 @@
+-/*
+- * This file is part of the libpayload project.
+- *
+- * Copyright (C) 2008 Advanced Micro Devices, Inc.
+- *
+- * Redistribution and use in source and binary forms, with or without
+- * modification, are permitted provided that the following conditions
+- * are met:
+- * 1. Redistributions of source code must retain the above copyright
+- *    notice, this list of conditions and the following disclaimer.
+- * 2. Redistributions in binary form must reproduce the above copyright
+- *    notice, this list of conditions and the following disclaimer in the
+- *    documentation and/or other materials provided with the distribution.
+- * 3. The name of the author may not be used to endorse or promote products
+- *    derived from this software without specific prior written permission.
+- *
+- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+- * SUCH DAMAGE.
+- */
+-
+-BASE_ADDRESS = 0x100000;
+-
+-OUTPUT_FORMAT(elf32-i386)
+-OUTPUT_ARCH(i386)
+-
+-ENTRY(_entry)
+-
+-HEAP_SIZE = 16384;
+-STACK_SIZE = 16384;
+-
+-SECTIONS
+-{
+-	. = BASE_ADDRESS;
+-
+-	. = ALIGN(16);
+-	_start = .;
+-
+-	.text : {
+-		*(.text._entry)
+-		*(.text)
+-		*(.text.*)
+-	}
+-
+-	.rodata : {
+-		*(.rodata)
+-		*(.rodata.*)
+-	}
+-
+-	.data : {
+-		*(.data)
+-		*(.data.*)
+-	}
+-
+-	.bss : {
+-		*(.bss)
+-		*(.bss.*)
+-		*(COMMON)
+-
+-		/* Stack and heap */
+-
+-		. = ALIGN(16);
+-		_heap = .;
+-		. += HEAP_SIZE;
+-		. = ALIGN(16);
+-		_eheap = .;
+-
+-		_estack = .;
+-		. += STACK_SIZE;
+-		. = ALIGN(16);
+-		_stack = .;
+-	}
+-
+-	_end = .;
+-
+-	/DISCARD/ : { *(.comment) *(.note) *(.note.*) }
+-}
+diff --git a/payloads/libpayload/sample/Makefile b/payloads/libpayload/sample/Makefile
+index 1daea5f6ec..e01d4e85df 100644
+--- a/payloads/libpayload/sample/Makefile
++++ b/payloads/libpayload/sample/Makefile
+@@ -1,51 +1,45 @@
+ ##
+ ## This file is part of the libpayload project.
+ ##
+ ## Copyright (C) 2008 Advanced Micro Devices, Inc.
+ ##
+ ## Redistribution and use in source and binary forms, with or without
+ ## modification, are permitted provided that the following conditions
+ ## are met:
+ ## 1. Redistributions of source code must retain the above copyright
+ ##    notice, this list of conditions and the following disclaimer.
+ ## 2. Redistributions in binary form must reproduce the above copyright
+ ##    notice, this list of conditions and the following disclaimer in the
+ ##    documentation and/or other materials provided with the distribution.
+ ## 3. The name of the author may not be used to endorse or promote products
+ ##    derived from this software without specific prior written permission.
+ ##
+ ## THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ ## ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ ## IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ## ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ ## FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ ## DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ ## OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ ## HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ ## LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ ## OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ ## SUCH DAMAGE.
+ ##
+ 
+ # Sample libpayload Makefile.
+ 
+-CC = gcc
+-CROSS_CFLAGS = -m32
++CC := ../bin/lpgcc
+ 
+-INCLUDES = -I../include
+-INCLUDES += -I$(shell $(CC) $(CROSS_CFLAGS) -print-search-dirs | head -n 1 | cut -d' ' -f2)include
+-
+-LIBPAYLOAD = ../libpayload.a
+-LIBGCC := $(shell $(CC) $(CROSS_CFLAGS) -print-libgcc-file-name)
+-CFLAGS := -Wall -Werror -Os -fno-stack-protector -nostdinc $(INCLUDES)
++CFLAGS := -Wall -Werror -Os
+ 
+ all: hello.elf
+ 
+ hello.elf: hello.o
+-	ld -T ../libpayload.ldscript -o $@ hello.o ../i386/head.o $(LIBPAYLOAD) $(LIBGCC)
++	$(CC) -o $@ hello.o
+ 
+ hello.o: hello.c
+-	$(CC) $(CROSS_CFLAGS) $(CFLAGS) -c -o $@ $<
++	$(CC) $(CFLAGS) -c -o $@ $<
+ 
+ clean:
+ 	rm -f hello.elf hello.o

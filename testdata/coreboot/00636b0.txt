@@ -1,0 +1,3107 @@
+commit 00636b0.txt
+Author: Stefan Reinauer <stefan.reinauer@coreboot.org>
+Date:   Wed Apr 4 00:08:51 2012 +0200
+
+    Add support for Intel Sandybridge CPU (northbridge part)
+    
+    Change-Id: I06228ecf9cac931ad34e32871d5a4f2a4857b2ac
+    Signed-off-by: Duncan Laurie <dlaurie@google.com>
+    Signed-off-by: Stefan Reinauer <reinauer@google.com>
+    Reviewed-on: http://review.coreboot.org/854
+    Tested-by: build bot (Jenkins)
+    Reviewed-by: Ronald G. Minnich <rminnich@gmail.com>
+
+diff --git a/src/northbridge/intel/Kconfig b/src/northbridge/intel/Kconfig
+index 31afe6a16a..8289a4560d 100644
+--- a/src/northbridge/intel/Kconfig
++++ b/src/northbridge/intel/Kconfig
+@@ -1,13 +1,14 @@
+ source src/northbridge/intel/e7501/Kconfig
+ source src/northbridge/intel/e7505/Kconfig
+ source src/northbridge/intel/e7520/Kconfig
+ source src/northbridge/intel/e7525/Kconfig
+ source src/northbridge/intel/i3100/Kconfig
+ source src/northbridge/intel/i440bx/Kconfig
+ source src/northbridge/intel/i440lx/Kconfig
+ source src/northbridge/intel/i82810/Kconfig
+ source src/northbridge/intel/i82830/Kconfig
+ source src/northbridge/intel/i855/Kconfig
+ source src/northbridge/intel/i945/Kconfig
+ source src/northbridge/intel/sch/Kconfig
+ source src/northbridge/intel/i5000/Kconfig
++source src/northbridge/intel/sandybridge/Kconfig
+diff --git a/src/northbridge/intel/Makefile.inc b/src/northbridge/intel/Makefile.inc
+index 6153052e4d..a93a1411b9 100644
+--- a/src/northbridge/intel/Makefile.inc
++++ b/src/northbridge/intel/Makefile.inc
+@@ -1,13 +1,15 @@
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_E7501) += e7501
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_E7505) += e7505
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_E7520) += e7520
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_E7525) += e7525
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_I3100) += i3100
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_I440BX) += i440bx
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_I440LX) += i440lx
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_I82810) += i82810
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_I82830) += i82830
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_I855) += i855
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_I945) += i945
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_SCH) += sch
+ subdirs-$(CONFIG_NORTHBRIDGE_INTEL_I5000) += i5000
++subdirs-$(CONFIG_NORTHBRIDGE_INTEL_SANDYBRIDGE) += sandybridge
++subdirs-$(CONFIG_NORTHBRIDGE_INTEL_IVYBRIDGE) += sandybridge
+diff --git a/src/northbridge/intel/sandybridge/Kconfig b/src/northbridge/intel/sandybridge/Kconfig
+new file mode 100644
+index 0000000000..8cf0a491d6
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/Kconfig
+@@ -0,0 +1,96 @@
++##
++## This file is part of the coreboot project.
++##
++## Copyright (C) 2010 Google Inc.
++##
++## This program is free software; you can redistribute it and/or modify
++## it under the terms of the GNU General Public License as published by
++## the Free Software Foundation; version 2 of the License.
++##
++## This program is distributed in the hope that it will be useful,
++## but WITHOUT ANY WARRANTY; without even the implied warranty of
++## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++## GNU General Public License for more details.
++##
++## You should have received a copy of the GNU General Public License
++## along with this program; if not, write to the Free Software
++## Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++##
++
++config NORTHBRIDGE_INTEL_SANDYBRIDGE
++	bool
++	select CACHE_MRC_BIN
++	select CPU_INTEL_MODEL_206AX
++
++config NORTHBRIDGE_INTEL_IVYBRIDGE
++	bool
++	select CACHE_MRC_BIN
++	select CPU_INTEL_MODEL_306AX
++
++if NORTHBRIDGE_INTEL_SANDYBRIDGE
++
++config VGA_BIOS_ID
++	string
++	default "8086,0106"
++
++config CACHE_MRC_SIZE_KB
++	int
++	default 256
++
++config DCACHE_RAM_BASE
++	hex
++	default 0xff7f0000
++
++config DCACHE_RAM_SIZE
++	hex
++	default 0x10000
++
++endif
++
++if NORTHBRIDGE_INTEL_IVYBRIDGE
++
++config VGA_BIOS_ID
++	string
++	default "8086,0166"
++
++config EXTERNAL_MRC_BLOB
++       bool
++       default n
++
++config CACHE_MRC_SIZE_KB
++	int
++	default 512
++
++config DCACHE_RAM_BASE
++	hex
++	default 0xff7e0000
++
++config DCACHE_RAM_SIZE
++	hex
++	default 0x20000
++
++endif
++
++if NORTHBRIDGE_INTEL_SANDYBRIDGE || NORTHBRIDGE_INTEL_IVYBRIDGE
++
++config DCACHE_RAM_MRC_VAR_SIZE
++	hex
++	default 0x4000
++
++config HAVE_MRC
++	bool "Add a System Agent binary"
++	help
++	  Select this option to add a System Agent binary to
++	  the resulting coreboot image.
++
++	  Note: Without this binary coreboot will not work
++
++config MRC_FILE
++	string "Intel System Agent path and filename"
++	depends on HAVE_MRC
++	default "mrc.bin"
++	help
++	  The path and filename of the file to use as System Agent
++	  binary.
++
++endif
+diff --git a/src/northbridge/intel/sandybridge/Makefile.inc b/src/northbridge/intel/sandybridge/Makefile.inc
+new file mode 100644
+index 0000000000..9e7568c812
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/Makefile.inc
+@@ -0,0 +1,41 @@
++#
++# This file is part of the coreboot project.
++#
++# Copyright (C) 2010 Google Inc.
++#
++# This program is free software; you can redistribute it and/or modify
++# it under the terms of the GNU General Public License as published by
++# the Free Software Foundation; version 2 of the License.
++#
++# This program is distributed in the hope that it will be useful,
++# but WITHOUT ANY WARRANTY; without even the implied warranty of
++# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++# GNU General Public License for more details.
++#
++# You should have received a copy of the GNU General Public License
++# along with this program; if not, write to the Free Software
++# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++#
++
++driver-y += northbridge.c
++driver-y += gma.c
++
++ramstage-$(CONFIG_GENERATE_ACPI_TABLES) += acpi.c
++
++romstage-y += udelay.c
++romstage-y += raminit.c
++romstage-y += early_init.c
++romstage-y += ../../../arch/x86/lib/walkcbfs.S
++
++smm-$(CONFIG_HAVE_SMI_HANDLER) += finalize.c
++
++# We don't ship that, but booting without it is bound to fail
++cbfs-files-$(CONFIG_HAVE_MRC) += mrc.bin
++mrc.bin-file := $(CONFIG_MRC_FILE)
++ifeq ($(CONFIG_NORTHBRIDGE_INTEL_IVYBRIDGE),y)
++mrc.bin-position := 0xfffa0000
++endif
++ifeq ($(CONFIG_NORTHBRIDGE_INTEL_SANDYBRIDGE),y)
++mrc.bin-position := 0xfffe0000
++endif
++mrc.bin-type := 0xab
+diff --git a/src/northbridge/intel/sandybridge/acpi.c b/src/northbridge/intel/sandybridge/acpi.c
+new file mode 100644
+index 0000000000..d1174d6481
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/acpi.c
+@@ -0,0 +1,75 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2009 coresystems GmbH
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; version 2 of
++ * the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
++ * MA 02110-1301 USA
++ */
++
++#include <types.h>
++#include <string.h>
++#include <console/console.h>
++#include <arch/acpi.h>
++#include <arch/acpigen.h>
++#include <device/device.h>
++#include <device/pci.h>
++#include <device/pci_ids.h>
++#include "sandybridge.h"
++
++unsigned long acpi_fill_mcfg(unsigned long current)
++{
++	device_t dev;
++	u32 pciexbar = 0;
++	u32 pciexbar_reg;
++	int max_buses;
++
++	dev = dev_find_device(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_NB, 0);
++	if (!dev)
++		return current;
++
++	pciexbar_reg=pci_read_config32(dev, PCIEXBAR);
++
++	// MMCFG not supported or not enabled.
++	if (!(pciexbar_reg & (1 << 0)))
++		return current;
++
++	switch ((pciexbar_reg >> 1) & 3) {
++	case 0: // 256MB
++		pciexbar = pciexbar_reg & ((1 << 31)|(1 << 30)|(1 << 29)|(1 << 28));
++		max_buses = 256;
++		break;
++	case 1: // 128M
++		pciexbar = pciexbar_reg & ((1 << 31)|(1 << 30)|(1 << 29)|(1 << 28)|(1 << 27));
++		max_buses = 128;
++		break;
++	case 2: // 64M
++		pciexbar = pciexbar_reg & ((1 << 31)|(1 << 30)|(1 << 29)|(1 << 28)|(1 << 27)|(1 << 26));
++		max_buses = 64;
++		break;
++	default: // RSVD
++		return current;
++	}
++
++	if (!pciexbar)
++		return current;
++
++	current += acpi_create_mcfg_mmconfig((acpi_mcfg_mmconfig_t *) current,
++			pciexbar, 0x0, 0x0, max_buses - 1);
++
++	return current;
++}
++
++
+diff --git a/src/northbridge/intel/sandybridge/acpi/hostbridge.asl b/src/northbridge/intel/sandybridge/acpi/hostbridge.asl
+new file mode 100644
+index 0000000000..592c4c6b44
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/acpi/hostbridge.asl
+@@ -0,0 +1,250 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2009 coresystems GmbH
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; version 2 of
++ * the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
++ * MA 02110-1301 USA
++ */
++
++
++Name(_HID,EISAID("PNP0A08"))	// PCIe
++Name(_CID,EISAID("PNP0A03"))	// PCI
++
++Name(_ADR, 0)
++Name(_BBN, 0)
++
++Device (MCHC)
++{
++	Name(_ADR, 0x00000000)	// 0:0.0
++
++	OperationRegion(MCHP, PCI_Config, 0x00, 0x100)
++	Field (MCHP, DWordAcc, NoLock, Preserve)
++	{
++		Offset (0x40),	// EPBAR
++		EPEN,	 1,	// Enable
++		,	11,	//
++		EPBR,	24,	// EPBAR
++
++		Offset (0x48),	// MCHBAR
++		MHEN,	 1,	// Enable
++		,	13,	//
++		MHBR,	22,	// MCHBAR
++
++		Offset (0x60),	// PCIe BAR
++		PXEN,	 1,	// Enable
++		PXSZ,	 2,	// BAR size
++		,	23,	//
++		PXBR,	10,	// PCIe BAR
++
++		Offset (0x68),	// DMIBAR
++		DMEN,	 1,	// Enable
++		,	11,	//
++		DMBR,	24,	// DMIBAR
++
++		Offset (0x70),	// ME Base Address
++		MEBA,	 64,
++
++		// ...
++
++		Offset (0x80),	// PAM0
++		,	 4,
++		PM0H,	 2,
++		,	 2,
++		Offset (0x81),	// PAM1
++		PM1L,	 2,
++		,	 2,
++		PM1H,	 2,
++		,	 2,
++		Offset (0x82),	// PAM2
++		PM2L,	 2,
++		,	 2,
++		PM2H,	 2,
++		,	 2,
++		Offset (0x83),	// PAM3
++		PM3L,	 2,
++		,	 2,
++		PM3H,	 2,
++		,	 2,
++		Offset (0x84),	// PAM4
++		PM4L,	 2,
++		,	 2,
++		PM4H,	 2,
++		,	 2,
++		Offset (0x85),	// PAM5
++		PM5L,	 2,
++		,	 2,
++		PM5H,	 2,
++		,	 2,
++		Offset (0x86),	// PAM6
++		PM6L,	 2,
++		,	 2,
++		PM6H,	 2,
++		,	 2,
++
++		Offset (0xa0),	// Top of Used Memory
++		TOM,	 64,
++
++		Offset (0xbc),	// Top of Low Used Memory
++		TLUD,	 32,
++	}
++
++}
++
++
++// Current Resource Settings
++
++Method (_CRS, 0, Serialized)
++{
++	Name (MCRS, ResourceTemplate()
++	{
++		// Bus Numbers
++		WordBusNumber (ResourceProducer, MinFixed, MaxFixed, PosDecode,
++				0x0000, 0x0000, 0x00ff, 0x0000, 0x0100,,, PB00)
++
++		// IO Region 0
++		DWordIO (ResourceProducer, MinFixed, MaxFixed, PosDecode, EntireRange,
++				0x0000, 0x0000, 0x0cf7, 0x0000, 0x0cf8,,, PI00)
++
++		// PCI Config Space
++		Io (Decode16, 0x0cf8, 0x0cf8, 0x0001, 0x0008)
++
++		// IO Region 1
++		DWordIO (ResourceProducer, MinFixed, MaxFixed, PosDecode, EntireRange,
++				0x0000, 0x0d00, 0xffff, 0x0000, 0xf300,,, PI01)
++
++		// VGA memory (0xa0000-0xbffff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000a0000, 0x000bffff, 0x00000000,
++				0x00020000,,, ASEG)
++
++		// OPROM reserved (0xc0000-0xc3fff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000c0000, 0x000c3fff, 0x00000000,
++				0x00004000,,, OPR0)
++
++		// OPROM reserved (0xc4000-0xc7fff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000c4000, 0x000c7fff, 0x00000000,
++				0x00004000,,, OPR1)
++
++		// OPROM reserved (0xc8000-0xcbfff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000c8000, 0x000cbfff, 0x00000000,
++				0x00004000,,, OPR2)
++
++		// OPROM reserved (0xcc000-0xcffff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000cc000, 0x000cffff, 0x00000000,
++				0x00004000,,, OPR3)
++
++		// OPROM reserved (0xd0000-0xd3fff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000d0000, 0x000d3fff, 0x00000000,
++				0x00004000,,, OPR4)
++
++		// OPROM reserved (0xd4000-0xd7fff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000d4000, 0x000d7fff, 0x00000000,
++				0x00004000,,, OPR5)
++
++		// OPROM reserved (0xd8000-0xdbfff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000d8000, 0x000dbfff, 0x00000000,
++				0x00004000,,, OPR6)
++
++		// OPROM reserved (0xdc000-0xdffff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000dc000, 0x000dffff, 0x00000000,
++				0x00004000,,, OPR7)
++
++		// BIOS Extension (0xe0000-0xe3fff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000e0000, 0x000e3fff, 0x00000000,
++				0x00004000,,, ESG0)
++
++		// BIOS Extension (0xe4000-0xe7fff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000e4000, 0x000e7fff, 0x00000000,
++				0x00004000,,, ESG1)
++
++		// BIOS Extension (0xe8000-0xebfff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000e8000, 0x000ebfff, 0x00000000,
++				0x00004000,,, ESG2)
++
++		// BIOS Extension (0xec000-0xeffff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000ec000, 0x000effff, 0x00000000,
++				0x00004000,,, ESG3)
++
++		// System BIOS (0xf0000-0xfffff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x000f0000, 0x000fffff, 0x00000000,
++				0x00010000,,, FSEG)
++
++		// PCI Memory Region (Top of memory-0xfebfffff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0x00000000, 0xfebfffff, 0x00000000,
++				0xfec00000,,, PM01)
++
++		// TPM Area (0xfed40000-0xfed44fff)
++		DWordMemory (ResourceProducer, PosDecode, MinFixed, MaxFixed,
++				Cacheable, ReadWrite,
++				0x00000000, 0xfed40000, 0xfed44fff, 0x00000000,
++				0x00005000,,, TPMR)
++	})
++
++	// Find PCI resource area in MCRS
++	CreateDwordField(MCRS, PM01._MIN, PMIN)
++	CreateDwordField(MCRS, PM01._MAX, PMAX)
++	CreateDwordField(MCRS, PM01._LEN, PLEN)
++
++	// Fix up PCI memory region
++	// Start with Top of Lower Usable DRAM
++	Store (^MCHC.TLUD, Local0)
++	Store (^MCHC.MEBA, Local1)
++
++	// Check if ME base is equal
++	If (LEqual (Local0, Local1)) {
++		// Use Top Of Memory instead
++		Store (^MCHC.TOM, Local0)
++	}
++
++	Store (Local0, PMIN)
++	Add(Subtract(PMAX, PMIN), 1, PLEN)
++
++	Return (MCRS)
++}
++
++/* IRQ assignment is mainboard specific. Get it from mainboard ACPI code */
++#include "acpi/sandybridge_pci_irqs.asl"
++
++
+diff --git a/src/northbridge/intel/sandybridge/acpi/igd.asl b/src/northbridge/intel/sandybridge/acpi/igd.asl
+new file mode 100644
+index 0000000000..a6804adb5e
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/acpi/igd.asl
+@@ -0,0 +1,324 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2009 coresystems GmbH
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; version 2 of
++ * the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
++ * MA 02110-1301 USA
++ */
++
++Device (GFX0)
++{
++	Name (_ADR, 0x00020000)
++
++	/* Display Output Switching */
++	Method (_DOS, 1)
++	{
++		/* Windows 2000 and Windows XP call _DOS to enable/disable
++		 * Display Output Switching during init and while a switch
++		 * is already active
++		 */
++		Store (And(Arg0, 7), DSEN)
++	}
++
++	/* We try to support as many i945 systems as possible,
++	 * so keep the number of DIDs flexible.
++	 */
++	Method (_DOD, 0)
++	{
++		If (LEqual(NDID, 1)) {
++			Name(DOD1, Package() {
++				0xffffffff
++			})
++			Store (Or(0x00010000, DID1), Index(DOD1, 0))
++			Return(DOD1)
++		}
++
++		If (LEqual(NDID, 2)) {
++			Name(DOD2, Package() {
++				0xffffffff,
++				0xffffffff
++			})
++			Store (Or(0x00010000, DID2), Index(DOD2, 0))
++			Store (Or(0x00010000, DID2), Index(DOD2, 1))
++			Return(DOD2)
++		}
++
++		If (LEqual(NDID, 3)) {
++			Name(DOD3, Package() {
++				0xffffffff,
++				0xffffffff,
++				0xffffffff
++			})
++			Store (Or(0x00010000, DID3), Index(DOD3, 0))
++			Store (Or(0x00010000, DID3), Index(DOD3, 1))
++			Store (Or(0x00010000, DID3), Index(DOD3, 2))
++			Return(DOD3)
++		}
++
++		If (LEqual(NDID, 4)) {
++			Name(DOD4, Package() {
++				0xffffffff,
++				0xffffffff,
++				0xffffffff,
++				0xffffffff
++			})
++			Store (Or(0x00010000, DID4), Index(DOD4, 0))
++			Store (Or(0x00010000, DID4), Index(DOD4, 1))
++			Store (Or(0x00010000, DID4), Index(DOD4, 2))
++			Store (Or(0x00010000, DID4), Index(DOD4, 3))
++			Return(DOD4)
++		}
++
++		If (LGreater(NDID, 4)) {
++			Name(DOD5, Package() {
++				0xffffffff,
++				0xffffffff,
++				0xffffffff,
++				0xffffffff,
++				0xffffffff
++			})
++			Store (Or(0x00010000, DID5), Index(DOD5, 0))
++			Store (Or(0x00010000, DID5), Index(DOD5, 1))
++			Store (Or(0x00010000, DID5), Index(DOD5, 2))
++			Store (Or(0x00010000, DID5), Index(DOD5, 3))
++			Store (Or(0x00010000, DID5), Index(DOD5, 4))
++			Return(DOD5)
++		}
++
++		/* Some error happened, but we have to return something */
++		Return (Package() {0x00000400})
++	}
++
++	Device(DD01)
++	{
++		/* Device Unique ID */
++		Method(_ADR, 0, Serialized)
++		{
++			If(LEqual(DID1, 0)) {
++				Return (1)
++			} Else {
++				Return (And(0xffff, DID1))
++			}
++		}
++
++		/* Device Current Status */
++		Method(_DCS, 0)
++		{
++			TRAP(1)
++			If (And(CSTE, 1)) {
++				Return (0x1f)
++			}
++			Return(0x1d)
++		}
++
++		/* Query Device Graphics State */
++		Method(_DGS, 0)
++		{
++			If (And(NSTE, 1)) {
++				Return(1)
++			}
++			Return(0)
++		}
++
++		/* Device Set State */
++		Method(_DSS, 1)
++		{
++			/* If Parameter Arg0 is (1 << 31) | (1 << 30), the
++			 * display switch was completed
++			 */
++			If (LEqual(And(Arg0, 0xc0000000), 0xc0000000)) {
++				Store (NSTE, CSTE)
++			}
++		}
++	}
++
++	Device(DD02)
++	{
++		/* Device Unique ID */
++		Method(_ADR, 0, Serialized)
++		{
++			If(LEqual(DID2, 0)) {
++				Return (2)
++			} Else {
++				Return (And(0xffff, DID2))
++			}
++		}
++
++		/* Device Current Status */
++		Method(_DCS, 0)
++		{
++			TRAP(1)
++			If (And(CSTE, 2)) {
++				Return (0x1f)
++			}
++			Return(0x1d)
++		}
++
++		/* Query Device Graphics State */
++		Method(_DGS, 0)
++		{
++			If (And(NSTE, 2)) {
++				Return(1)
++			}
++			Return(0)
++		}
++
++		/* Device Set State */
++		Method(_DSS, 1)
++		{
++			/* If Parameter Arg0 is (1 << 31) | (1 << 30), the
++			 * display switch was completed
++			 */
++			If (LEqual(And(Arg0, 0xc0000000), 0xc0000000)) {
++				Store (NSTE, CSTE)
++			}
++		}
++	}
++
++
++	Device(DD03)
++	{
++		/* Device Unique ID */
++		Method(_ADR, 0, Serialized)
++		{
++			If(LEqual(DID3, 0)) {
++				Return (3)
++			} Else {
++				Return (And(0xffff, DID3))
++			}
++		}
++
++		/* Device Current Status */
++		Method(_DCS, 0)
++		{
++			TRAP(1)
++			If (And(CSTE, 4)) {
++				Return (0x1f)
++			}
++			Return(0x1d)
++		}
++
++		/* Query Device Graphics State */
++		Method(_DGS, 0)
++		{
++			If (And(NSTE, 4)) {
++				Return(1)
++			}
++			Return(0)
++		}
++
++		/* Device Set State */
++		Method(_DSS, 1)
++		{
++			/* If Parameter Arg0 is (1 << 31) | (1 << 30), the
++			 * display switch was completed
++			 */
++			If (LEqual(And(Arg0, 0xc0000000), 0xc0000000)) {
++				Store (NSTE, CSTE)
++			}
++		}
++	}
++
++
++	Device(DD04)
++	{
++		/* Device Unique ID */
++		Method(_ADR, 0, Serialized)
++		{
++			If(LEqual(DID4, 0)) {
++				Return (4)
++			} Else {
++				Return (And(0xffff, DID4))
++			}
++		}
++
++		/* Device Current Status */
++		Method(_DCS, 0)
++		{
++			TRAP(1)
++			If (And(CSTE, 8)) {
++				Return (0x1f)
++			}
++			Return(0x1d)
++		}
++
++		/* Query Device Graphics State */
++		Method(_DGS, 0)
++		{
++			If (And(NSTE, 4)) {
++				Return(1)
++			}
++			Return(0)
++		}
++
++		/* Device Set State */
++		Method(_DSS, 1)
++		{
++			/* If Parameter Arg0 is (1 << 31) | (1 << 30), the
++			 * display switch was completed
++			 */
++			If (LEqual(And(Arg0, 0xc0000000), 0xc0000000)) {
++				Store (NSTE, CSTE)
++			}
++		}
++	}
++
++
++	Device(DD05)
++	{
++		/* Device Unique ID */
++		Method(_ADR, 0, Serialized)
++		{
++			If(LEqual(DID5, 0)) {
++				Return (5)
++			} Else {
++				Return (And(0xffff, DID5))
++			}
++		}
++
++		/* Device Current Status */
++		Method(_DCS, 0)
++		{
++			TRAP(1)
++			If (And(CSTE, 16)) {
++				Return (0x1f)
++			}
++			Return(0x1d)
++		}
++
++		/* Query Device Graphics State */
++		Method(_DGS, 0)
++		{
++			If (And(NSTE, 4)) {
++				Return(1)
++			}
++			Return(0)
++		}
++
++		/* Device Set State */
++		Method(_DSS, 1)
++		{
++			/* If Parameter Arg0 is (1 << 31) | (1 << 30), the
++			 * display switch was completed
++			 */
++			If (LEqual(And(Arg0, 0xc0000000), 0xc0000000)) {
++				Store (NSTE, CSTE)
++			}
++		}
++	}
++
++}
++
+diff --git a/src/northbridge/intel/sandybridge/acpi/sandybridge.asl b/src/northbridge/intel/sandybridge/acpi/sandybridge.asl
+new file mode 100644
+index 0000000000..64b5d8f48e
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/acpi/sandybridge.asl
+@@ -0,0 +1,59 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2009 coresystems GmbH
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; version 2 of
++ * the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
++ * MA 02110-1301 USA
++ */
++
++#include "hostbridge.asl"
++#include "../sandybridge.h"
++
++/* PCI Device Resource Consumption */
++Device (PDRC)
++{
++	Name (_HID, EISAID("PNP0C02"))
++	Name (_UID, 1)
++
++	Name (PDRS, ResourceTemplate() {
++		Memory32Fixed(ReadWrite, 0xfed1c000, 0x00004000) // RCBA
++		Memory32Fixed(ReadWrite, DEFAULT_MCHBAR,   0x00004000)
++		Memory32Fixed(ReadWrite, DEFAULT_DMIBAR,   0x00001000)
++		Memory32Fixed(ReadWrite, DEFAULT_EPBAR,    0x00001000)
++		Memory32Fixed(ReadWrite, DEFAULT_PCIEXBAR, 0x04000000)
++		Memory32Fixed(ReadWrite, 0xfed20000, 0x00020000) // Misc ICH
++		Memory32Fixed(ReadWrite, 0xfed40000, 0x00005000) // Misc ICH
++		Memory32Fixed(ReadWrite, 0xfed45000, 0x0004b000) // Misc ICH
++
++#if CONFIG_CHROMEOS_RAMOOPS
++		Memory32Fixed(ReadWrite, CONFIG_CHROMEOS_RAMOOPS_RAM_START,
++					 CONFIG_CHROMEOS_RAMOOPS_RAM_SIZE)
++#endif
++
++		/* Required for SandyBridge sighting 3715511 */
++		Memory32Fixed(ReadWrite, 0x20000000, 0x00200000)
++		Memory32Fixed(ReadWrite, 0x40000000, 0x00200000)
++	})
++
++	// Current Resource Settings
++	Method (_CRS, 0, Serialized)
++	{
++		Return(PDRS)
++	}
++}
++
++// Integrated graphics 0:2.0
++#include "igd.asl"
+diff --git a/src/northbridge/intel/sandybridge/chip.h b/src/northbridge/intel/sandybridge/chip.h
+new file mode 100644
+index 0000000000..b891884c9d
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/chip.h
+@@ -0,0 +1,40 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2008 coresystems GmbH
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++/*
++ * Digital Port Hotplug Enable:
++ *  0x04 = Enabled, 2ms short pulse
++ *  0x05 = Enabled, 4.5ms short pulse
++ *  0x06 = Enabled, 6ms short pulse
++ *  0x07 = Enabled, 100ms short pulse
++ */
++struct northbridge_intel_sandybridge_config {
++	u8 gpu_dp_b_hotplug; /* Digital Port B Hotplug Config */
++	u8 gpu_dp_c_hotplug; /* Digital Port C Hotplug Config */
++	u8 gpu_dp_d_hotplug; /* Digital Port D Hotplug Config */
++
++	u8 gpu_panel_port_select; /* 0=LVDS 1=DP_B 2=DP_C 3=DP_D */
++	u8 gpu_panel_power_cycle_delay;          /* T4 time sequence */
++	u16 gpu_panel_power_up_delay;            /* T1+T2 time sequence */
++	u16 gpu_panel_power_down_delay;          /* T3 time sequence */
++	u16 gpu_panel_power_backlight_on_delay;  /* T5 time sequence */
++	u16 gpu_panel_power_backlight_off_delay; /* Tx time sequence */
++};
++
++extern struct chip_operations northbridge_intel_sandybridge_ops;
+diff --git a/src/northbridge/intel/sandybridge/early_init.c b/src/northbridge/intel/sandybridge/early_init.c
+new file mode 100644
+index 0000000000..f052fbc3d3
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/early_init.c
+@@ -0,0 +1,165 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2010 coresystems GmbH
++ * Copyright (C) 2011 Google Inc
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <stdint.h>
++#include <stdlib.h>
++#include <console/console.h>
++#include <arch/io.h>
++#include <arch/romcc_io.h>
++#include <device/pci_def.h>
++#include "sandybridge.h"
++#include "pcie_config.c"
++
++static void sandybridge_setup_bars(void)
++{
++	/* Setting up Southbridge. In the northbridge code. */
++	printk(BIOS_DEBUG, "Setting up static southbridge registers...");
++	pci_write_config32(PCI_DEV(0, 0x1f, 0), RCBA, DEFAULT_RCBA | 1);
++
++	pci_write_config32(PCI_DEV(0, 0x1f, 0), PMBASE, DEFAULT_PMBASE | 1);
++	pci_write_config8(PCI_DEV(0, 0x1f, 0), 0x44 /* ACPI_CNTL */ , 0x80); /* Enable ACPI BAR */
++
++	printk(BIOS_DEBUG, " done.\n");
++
++	printk(BIOS_DEBUG, "Disabling Watchdog reboot...");
++	RCBA32(GCS) = RCBA32(GCS) | (1 << 5);	/* No reset */
++	outw((1 << 11), DEFAULT_PMBASE | 0x60 | 0x08);	/* halt timer */
++	printk(BIOS_DEBUG, " done.\n");
++
++	printk(BIOS_DEBUG, "Setting up static northbridge registers...");
++	/* Set up all hardcoded northbridge BARs */
++	pci_write_config32(PCI_DEV(0, 0x00, 0), EPBAR, DEFAULT_EPBAR | 1);
++	pci_write_config32(PCI_DEV(0, 0x00, 0), EPBAR + 4, (0LL+DEFAULT_EPBAR) >> 32);
++	pci_write_config32(PCI_DEV(0, 0x00, 0), MCHBAR, DEFAULT_MCHBAR | 1);
++	pci_write_config32(PCI_DEV(0, 0x00, 0), MCHBAR + 4, (0LL+DEFAULT_MCHBAR) >> 32);
++	pci_write_config32(PCI_DEV(0, 0x00, 0), PCIEXBAR, DEFAULT_PCIEXBAR | 5); /* 64MB - busses 0-63 */
++	pci_write_config32(PCI_DEV(0, 0x00, 0), PCIEXBAR + 4, (0LL+DEFAULT_PCIEXBAR) >> 32);
++	pci_write_config32(PCI_DEV(0, 0x00, 0), DMIBAR, DEFAULT_DMIBAR | 1);
++	pci_write_config32(PCI_DEV(0, 0x00, 0), DMIBAR + 4, (0LL+DEFAULT_DMIBAR) >> 32);
++
++	/* Set C0000-FFFFF to access RAM on both reads and writes */
++	pci_write_config8(PCI_DEV(0, 0x00, 0), PAM0, 0x30);
++	pci_write_config8(PCI_DEV(0, 0x00, 0), PAM1, 0x33);
++	pci_write_config8(PCI_DEV(0, 0x00, 0), PAM2, 0x33);
++	pci_write_config8(PCI_DEV(0, 0x00, 0), PAM3, 0x33);
++	pci_write_config8(PCI_DEV(0, 0x00, 0), PAM4, 0x33);
++	pci_write_config8(PCI_DEV(0, 0x00, 0), PAM5, 0x33);
++	pci_write_config8(PCI_DEV(0, 0x00, 0), PAM6, 0x33);
++
++	printk(BIOS_DEBUG, " done.\n");
++}
++
++static void sandybridge_setup_graphics(void)
++{
++	u32 reg32;
++	u16 reg16;
++	u8 reg8;
++
++	reg16 = pci_read_config16(PCI_DEV(0,2,0), PCI_DEVICE_ID);
++	switch (reg16) {
++	case 0x0102: /* GT1 Desktop */
++	case 0x0106: /* GT1 Mobile */
++	case 0x010a: /* GT1 Server */
++	case 0x0112: /* GT2 Desktop */
++	case 0x0116: /* GT2 Mobile */
++	case 0x0122: /* GT2 Desktop >=1.3GHz */
++	case 0x0126: /* GT2 Mobile >=1.3GHz */
++	case 0x0166: /* IvyBridge ??? */
++		break;
++	default:
++		printk(BIOS_DEBUG, "Graphics not supported by this CPU/chipset.\n");
++		return;
++	}
++
++	printk(BIOS_DEBUG, "Initializing Graphics...\n");
++
++	/* Setup IGD memory by setting GGC[7:3] = 1 for 32MB */
++	reg16 = pci_read_config16(PCI_DEV(0,0,0), GGC);
++	reg16 &= ~0x00f8;
++	reg16 |= 1 << 3;
++	/* Program GTT memory by setting GGC[9:8] = 2MB */
++	reg16 &= ~0x0300;
++	reg16 |= 2 << 8;
++	/* Enable VGA decode */
++	reg16 &= ~0x0002;
++	pci_write_config16(PCI_DEV(0,0,0), GGC, reg16);
++
++	/* Enable 256MB aperture */
++	reg8 = pci_read_config8(PCI_DEV(0, 2, 0), MSAC);
++	reg8 &= ~0x06;
++	reg8 |= 0x02;
++	pci_write_config8(PCI_DEV(0, 2, 0), MSAC, reg8);
++
++	/* Erratum workarounds */
++	MCHBAR8(0x5f10) = 0x20;
++
++	reg32 = MCHBAR32(0x5f00);
++	reg32 |= (1 << 9)|(1 << 10);
++	MCHBAR32(0x5f00) = reg32;
++
++	/* Enable SA Clock Gating */
++	reg32 = MCHBAR32(0x5f00);
++	MCHBAR32(0x5f00) = reg32 | 1;
++
++	/* GPU RC6 workaround for sighting 366252 */
++	reg32 = MCHBAR32(0x5d14);
++	reg32 |= (1 << 31);
++	MCHBAR32(0x5d14) = reg32;
++
++	/* VLW */
++	reg32 = MCHBAR32(0x6120);
++	reg32 &= ~(1 << 0);
++	MCHBAR32(0x6120) = reg32;
++
++	reg32 = MCHBAR32(0x5418);
++	reg32 |= (1 << 4) | (1 << 5);
++	MCHBAR32(0x5418) = reg32;
++}
++
++void sandybridge_early_initialization(int chipset_type)
++{
++	u32 capid0_a;
++	u8 reg8;
++
++	/* Device ID Override Enable should be done very early */
++	capid0_a = pci_read_config32(PCI_DEV(0, 0, 0), 0xe4);
++	if (capid0_a & (1 << 10)) {
++		reg8 = pci_read_config8(PCI_DEV(0, 0, 0), 0xf3);
++		reg8 &= ~7; /* Clear 2:0 */
++
++		if (chipset_type == SANDYBRIDGE_MOBILE)
++			reg8 |= 1; /* Set bit 0 */
++
++		pci_write_config8(PCI_DEV(0, 0, 0), 0xf3, reg8);
++	}
++
++	/* Setup all BARs required for early PCIe and raminit */
++	sandybridge_setup_bars();
++
++	/* Device Enable */
++	pci_write_config32(PCI_DEV(0, 0, 0), DEVEN, DEVEN_HOST | DEVEN_IGD);
++
++	sandybridge_setup_graphics();
++}
++
++void sandybridge_late_initialization(void)
++{
++}
++
+diff --git a/src/northbridge/intel/sandybridge/finalize.c b/src/northbridge/intel/sandybridge/finalize.c
+new file mode 100644
+index 0000000000..5bd3f1a5e2
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/finalize.c
+@@ -0,0 +1,58 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2012 The Chromium OS Authors. All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License as
++ * published by the Free Software Foundation; version 2 of
++ * the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <arch/io.h>
++#include <arch/romcc_io.h>
++#include <stdlib.h>
++#include "pcie_config.c"
++#include "sandybridge.h"
++
++#define PCI_DEV_SNB PCI_DEV(0, 0, 0)
++
++void intel_sandybridge_finalize_smm(void)
++{
++	pcie_or_config16(PCI_DEV_SNB, 0x50, 1 << 0);	/* GGC */
++	pcie_or_config32(PCI_DEV_SNB, 0x5c, 1 << 0);	/* DPR */
++	pcie_or_config32(PCI_DEV_SNB, 0x78, 1 << 10);	/* ME */
++	pcie_or_config32(PCI_DEV_SNB, 0x90, 1 << 0);	/* REMAPBASE */
++	pcie_or_config32(PCI_DEV_SNB, 0x98, 1 << 0);	/* REMAPLIMIT */
++	pcie_or_config32(PCI_DEV_SNB, 0xa0, 1 << 0);	/* TOM */
++	pcie_or_config32(PCI_DEV_SNB, 0xa8, 1 << 0);	/* TOUUD */
++	pcie_or_config32(PCI_DEV_SNB, 0xb0, 1 << 0);	/* BDSM */
++	pcie_or_config32(PCI_DEV_SNB, 0xb4, 1 << 0);	/* BGSM */
++	pcie_or_config32(PCI_DEV_SNB, 0xb8, 1 << 0);	/* TSEGMB */
++	pcie_or_config32(PCI_DEV_SNB, 0xbc, 1 << 0);	/* TOLUD */
++
++	MCHBAR32_OR(0x5500, 1 << 0);	/* PAVP */
++	MCHBAR32_OR(0x5f00, 1 << 31);	/* SA PM */
++	MCHBAR32_OR(0x6020, 1 << 0);	/* UMA GFX */
++	MCHBAR32_OR(0x63fc, 1 << 0);	/* VTDTRK */
++	MCHBAR32_OR(0x6800, 1 << 31);
++	MCHBAR32_OR(0x7000, 1 << 31);
++	MCHBAR32_OR(0x77fc, 1 << 0);
++
++	/* Memory Controller Lockdown */
++	MCHBAR8(0x50fc) = 0x8f;
++
++	/* Read+write the following */
++	MCHBAR32(0x6030) = MCHBAR32(0x6030);
++	MCHBAR32(0x6034) = MCHBAR32(0x6034);
++	MCHBAR32(0x6008) = MCHBAR32(0x6008);
++}
+diff --git a/src/northbridge/intel/sandybridge/gma.c b/src/northbridge/intel/sandybridge/gma.c
+new file mode 100644
+index 0000000000..00b5957035
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/gma.c
+@@ -0,0 +1,474 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2011 Chromium OS Authors
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <arch/io.h>
++#include <console/console.h>
++#include <delay.h>
++#include <device/device.h>
++#include <device/pci.h>
++#include <device/pci_ids.h>
++
++#include "chip.h"
++#include "sandybridge.h"
++
++/* some vga option roms are used for several chipsets but they only have one
++ * PCI ID in their header. If we encounter such an option rom, we need to do
++ * the mapping ourselfes
++ */
++
++u32 map_oprom_vendev(u32 vendev)
++{
++	u32 new_vendev=vendev;
++
++	switch (vendev) {
++	case 0x01028086:		/* GT1 Desktop */
++	case 0x010a8086:		/* GT1 Server */
++	case 0x01128086:		/* GT2 Desktop */
++	case 0x01168086:		/* GT2 Mobile */
++	case 0x01228086:		/* GT2 Desktop >=1.3GHz */
++	case 0x01268086:		/* GT2 Mobile >=1.3GHz */
++	case 0x01668086:                /* IVB */
++		new_vendev=0x01068086;	/* GT1 Mobile */
++		break;
++	}
++
++	return new_vendev;
++}
++
++static struct resource *gtt_res = NULL;
++
++static inline u32 gtt_read(u32 reg)
++{
++	return read32(gtt_res->base + reg);
++}
++
++static inline void gtt_write(u32 reg, u32 data)
++{
++	write32(gtt_res->base + reg, data);
++}
++
++#define GTT_RETRY 1000
++static int gtt_poll(u32 reg, u32 mask, u32 value)
++{
++	unsigned try = GTT_RETRY;
++	u32 data;
++
++	while (try--) {
++		data = gtt_read(reg);
++		if ((data & mask) == value)
++			return 1;
++		udelay(10);
++	}
++
++	printk(BIOS_ERR, "GT init timeout\n");
++	return 0;
++}
++
++static void gma_pm_init_pre_vbios(struct device *dev)
++{
++	u32 reg32;
++
++	printk(BIOS_DEBUG, "GT Power Management Init\n");
++
++	gtt_res = find_resource(dev, PCI_BASE_ADDRESS_0);
++	if (!gtt_res || !gtt_res->base)
++		return;
++
++	if (bridge_silicon_revision() < IVB_STEP_C0) {
++		/* 1: Enable force wake */
++		gtt_write(0xa18c, 0x00000001);
++		if (!gtt_poll(0x130090, (1 << 0), (1 << 0)))
++			return;
++	} else {
++		gtt_write(0xa180, 1 << 5);
++		gtt_write(0xa188, 0xffff0001);
++		if (!gtt_poll(0x130090, (1 << 0), (1 << 0)))
++			return;
++	}
++
++	if ((bridge_silicon_revision() & BASE_REV_MASK) == BASE_REV_SNB) {
++		/* 1d: Set GTT+0x42004 [15:14]=11 (SnB C1+) */
++		reg32 = gtt_read(0x42004);
++		reg32 |= (1 << 14) | (1 << 15);
++		gtt_write(0x42004, reg32);
++	}
++
++	if (bridge_silicon_revision() >= IVB_STEP_A0) {
++		/* Display Reset Acknowledge Settings */
++		gtt_write(0xa18c, 0x00000001);
++		reg32 = gtt_read(0x45010);
++		reg32 |= (1 << 1) | (1 << 0);
++		gtt_write(0x45010, reg32);
++	}
++
++	/* 2: Get GT SKU from GTT+0x911c[13] */
++	if ((bridge_silicon_revision() & BASE_REV_MASK) == BASE_REV_SNB) {
++		reg32 = gtt_read(0x911c);
++		if (reg32 & (1 << 13)) {
++			printk(BIOS_DEBUG, "GT1 Power Meter Weights\n");
++			gtt_write(0xa200, 0xcc000000);
++			gtt_write(0xa204, 0x07000040);
++			gtt_write(0xa208, 0x0000fe00);
++			gtt_write(0xa20c, 0x00000000);
++			gtt_write(0xa210, 0x17000000);
++			gtt_write(0xa214, 0x00000021);
++			gtt_write(0xa218, 0x0817fe19);
++			gtt_write(0xa21c, 0x00000000);
++			gtt_write(0xa220, 0x00000000);
++			gtt_write(0xa224, 0xcc000000);
++			gtt_write(0xa228, 0x07000040);
++			gtt_write(0xa22c, 0x0000fe00);
++			gtt_write(0xa230, 0x00000000);
++			gtt_write(0xa234, 0x17000000);
++			gtt_write(0xa238, 0x00000021);
++			gtt_write(0xa23c, 0x0817fe19);
++			gtt_write(0xa240, 0x00000000);
++			gtt_write(0xa244, 0x00000000);
++			gtt_write(0xa248, 0x8000421e);
++		} else {
++			printk(BIOS_DEBUG, "GT2 Power Meter Weights\n");
++			gtt_write(0xa200, 0x330000a6);
++			gtt_write(0xa204, 0x402d0031);
++			gtt_write(0xa208, 0x00165f83);
++			gtt_write(0xa20c, 0xf1000000);
++			gtt_write(0xa210, 0x00000000);
++			gtt_write(0xa214, 0x00160016);
++			gtt_write(0xa218, 0x002a002b);
++			gtt_write(0xa21c, 0x00000000);
++			gtt_write(0xa220, 0x00000000);
++			gtt_write(0xa224, 0x330000a6);
++			gtt_write(0xa228, 0x402d0031);
++			gtt_write(0xa22c, 0x00165f83);
++			gtt_write(0xa230, 0xf1000000);
++			gtt_write(0xa234, 0x00000000);
++			gtt_write(0xa238, 0x00160016);
++			gtt_write(0xa23c, 0x002a002b);
++			gtt_write(0xa240, 0x00000000);
++			gtt_write(0xa244, 0x00000000);
++			gtt_write(0xa248, 0x8000421e);
++		}
++	} else {
++		printk(BIOS_DEBUG, "IVB GT Power Meter Weights\n");
++		gtt_write(0xa800, 0x00000000);
++		gtt_write(0xa804, 0x00023800);
++		gtt_write(0xa808, 0x00000902);
++		gtt_write(0xa80c, 0x0c002f00);
++		gtt_write(0xa810, 0x12000500);
++		gtt_write(0xa814, 0x00000000);
++		gtt_write(0xa818, 0x00b20000);
++		gtt_write(0xa81c, 0x00000002);
++		gtt_write(0xa820, 0x03004b02);
++		gtt_write(0xa824, 0x00000600);
++		gtt_write(0xa828, 0x07000773);
++		gtt_write(0xa82c, 0x00000000);
++		gtt_write(0xa830, 0x00010000);
++		gtt_write(0xa834, 0x0510020d);
++		gtt_write(0xa838, 0x00020100);
++		gtt_write(0xa83c, 0x00103700);
++		gtt_write(0xa840, 0x0000001d);
++		gtt_write(0xa844, 0x00000000);
++		gtt_write(0xa848, 0x20001b00);
++		gtt_write(0xa84c, 0x0a000010);
++		gtt_write(0xa850, 0x00000000);
++		gtt_write(0xa854, 0x00000008);
++		gtt_write(0xa858, 0x00000000);
++		gtt_write(0xa85c, 0x00000000);
++		gtt_write(0xa860, 0x00040000);
++		gtt_write(0xa248, 0x0000221e);
++		gtt_write(0xa900, 0x00000000);
++		gtt_write(0xa904, 0x00003500);
++		gtt_write(0xa908, 0x00000000);
++		gtt_write(0xa90c, 0x0c000000);
++		gtt_write(0xa910, 0x12000500);
++		gtt_write(0xa914, 0x00000000);
++		gtt_write(0xa918, 0x00b20000);
++		gtt_write(0xa91c, 0x00000000);
++		gtt_write(0xa920, 0x08004b02);
++		gtt_write(0xa924, 0x00000400);
++		gtt_write(0xa928, 0x07000820);
++		gtt_write(0xa92c, 0x00000000);
++		gtt_write(0xa930, 0x00030000);
++		gtt_write(0xa934, 0x050f020d);
++		gtt_write(0xa938, 0x00020300);
++		gtt_write(0xa93c, 0x00903900);
++		gtt_write(0xa940, 0x00000000);
++		gtt_write(0xa944, 0x00000000);
++		gtt_write(0xa948, 0x20001b00);
++		gtt_write(0xa94c, 0x0a000010);
++		gtt_write(0xa950, 0x00000000);
++		gtt_write(0xa954, 0x00000008);
++		gtt_write(0xa960, 0x00110000);
++		gtt_write(0xaa3c, 0x00003900);
++		gtt_write(0xaa54, 0x00000008);
++		gtt_write(0xaa60, 0x00110000);
++	}
++
++	/* 3: Gear ratio map */
++	gtt_write(0xa004, 0x00000010);
++
++	/* 4: GFXPAUSE */
++	gtt_write(0xa000, 0x00070020);
++
++	/* 5: Dynamic EU trip control */
++	gtt_write(0xa080, 0x00000004);
++
++	/* 6: ECO bits */
++	reg32 = gtt_read(0xa180);
++	reg32 |= (1 << 26) | (1 << 31);
++	/* (bit 20=1 for SNB step D1+ / IVB A0+) */
++	if (bridge_silicon_revision() >= SNB_STEP_D1)
++		reg32 |= (1 << 20);
++	gtt_write(0xa180, reg32);
++
++	/* 6a: for SnB step D2+ only */
++	if (((bridge_silicon_revision() & BASE_REV_MASK) == BASE_REV_SNB) &&
++		(bridge_silicon_revision() >= SNB_STEP_D2)) {
++		reg32 = gtt_read(0x9400);
++		reg32 |= (1 << 7);
++		gtt_write(0x9400, reg32);
++
++		reg32 = gtt_read(0x941c);
++		reg32 &= 0xf;
++		reg32 |= (1 << 1);
++		gtt_write(0x941c, reg32);
++		if (!gtt_poll(0x941c, (1 << 1), (0 << 1)))
++			return;
++	}
++
++	if ((bridge_silicon_revision() & BASE_REV_MASK) == BASE_REV_IVB) {
++		reg32 = gtt_read(0x907c);
++		reg32 |= (1 << 16);
++		gtt_write(0x907c, reg32);
++
++		/* 6b: Clocking reset controls */
++		gtt_write(0x9424, 0x00000001);
++	} else {
++		/* 6b: Clocking reset controls */
++		gtt_write(0x9424, 0x00000000);
++	}
++
++	/* 7 */
++	if (!gtt_poll(0x138124, (1 << 31), (0 << 31)))
++		return;
++	gtt_write(0x138128, 0x00000029); /* Mailbox Data */
++	gtt_write(0x138124, 0x80000004); /* Mailbox Cmd for RC6 VID */
++	if (!gtt_poll(0x138124, (1 << 31), (0 << 31)))
++		return;
++	gtt_write(0x138124, 0x8000000a); /* Mailbox Cmd to clear RC6 count */
++	if (!gtt_poll(0x138124, (1 << 31), (0 << 31)))
++		return;
++
++	/* 8 */
++	gtt_write(0xa090, 0x00000000); /* RC Control */
++	gtt_write(0xa098, 0x03e80000); /* RC1e Wake Rate Limit */
++	gtt_write(0xa09c, 0x0028001e); /* RC6/6p Wake Rate Limit */
++	gtt_write(0xa0a0, 0x0000001e); /* RC6pp Wake Rate Limit */
++	gtt_write(0xa0a8, 0x0001e848); /* RC Evaluation Interval */
++	gtt_write(0xa0ac, 0x00000019); /* RC Idle Hysteresis */
++
++	/* 9 */
++	gtt_write(0x2054, 0x0000000a); /* Render Idle Max Count */
++	gtt_write(0x12054,0x0000000a); /* Video Idle Max Count */
++	gtt_write(0x22054,0x0000000a); /* Blitter Idle Max Count */
++
++	/* 10 */
++	gtt_write(0xa0b0, 0x00000000); /* Unblock Ack to Busy */
++	gtt_write(0xa0b4, 0x000003e8); /* RC1e Threshold */
++	gtt_write(0xa0b8, 0x0000c350); /* RC6 Threshold */
++	gtt_write(0xa0bc, 0x000186a0); /* RC6p Threshold */
++	gtt_write(0xa0c0, 0x0000fa00); /* RC6pp Threshold */
++
++	/* 11 */
++	gtt_write(0xa010, 0x000f4240); /* RP Down Timeout */
++	gtt_write(0xa014, 0x12060000); /* RP Interrupt Limits */
++	gtt_write(0xa02c, 0x00015f90); /* RP Up Threshold */
++	gtt_write(0xa030, 0x000186a0); /* RP Down Threshold */
++	gtt_write(0xa068, 0x000186a0); /* RP Up EI */
++	gtt_write(0xa06c, 0x000493e0); /* RP Down EI */
++	gtt_write(0xa070, 0x0000000a); /* RP Idle Hysteresis */
++
++	/* 11a: Enable Render Standby (RC6) */
++	if ((bridge_silicon_revision() & BASE_REV_MASK) == BASE_REV_IVB) {
++		/* on IVB: also enable DeepRenderStandby */
++		gtt_write(0xa090, 0x88060000); /* HW RC Control */
++	} else {
++		gtt_write(0xa090, 0x88040000); /* HW RC Control */
++	}
++
++	/* 12: Normal Frequency Request */
++	/* RPNFREQ_VAL comes from MCHBAR 0x5998 23:16 (8 bits!? use 7) */
++	reg32 = MCHBAR32(0x5998);
++	reg32 >>= 16;
++	reg32 &= 0xef;
++	reg32 <<= 25;
++	gtt_write(0xa008, reg32);
++
++	/* 13: RP Control */
++	gtt_write(0xa024, 0x00000592);
++
++	/* 14: Enable PM Interrupts */
++	gtt_write(0x4402c, 0x03000076);
++
++	/* Clear 0x6c024 [8:6] */
++	reg32 = gtt_read(0x6c024);
++	reg32 &= ~0x000001c0;
++	gtt_write(0x6c024, reg32);
++}
++
++static void gma_pm_init_post_vbios(struct device *dev)
++{
++	struct northbridge_intel_sandybridge_config *conf = dev->chip_info;
++	u32 reg32;
++
++	printk(BIOS_DEBUG, "GT Power Management Init (post VBIOS)\n");
++
++	/* 15: Deassert Force Wake */
++	gtt_write(0xa18c, gtt_read(0xa18c) & ~1);
++	if (!gtt_poll(0x130090, (1 << 0), (0 << 0)))
++		return;
++
++	/* 16: SW RC Control */
++	gtt_write(0xa094, 0x00060000);
++
++	/* Setup Digital Port Hotplug */
++	reg32 = gtt_read(0xc4030);
++	if (!reg32) {
++		reg32 = (conf->gpu_dp_b_hotplug & 0x7) << 2;
++		reg32 |= (conf->gpu_dp_c_hotplug & 0x7) << 10;
++		reg32 |= (conf->gpu_dp_d_hotplug & 0x7) << 18;
++		gtt_write(0xc4030, reg32);
++	}
++
++	/* Setup Panel Power On Delays */
++	reg32 = gtt_read(0xc7208);
++	if (!reg32) {
++		reg32 = (conf->gpu_panel_port_select & 0x3) << 30;
++		reg32 |= (conf->gpu_panel_power_up_delay & 0x1fff) << 16;
++		reg32 |= (conf->gpu_panel_power_backlight_on_delay & 0x1fff);
++		gtt_write(0xc7208, reg32);
++	}
++
++	/* Setup Panel Power Off Delays */
++	reg32 = gtt_read(0xc720c);
++	if (!reg32) {
++		reg32 = (conf->gpu_panel_power_down_delay & 0x1fff) << 16;
++		reg32 |= (conf->gpu_panel_power_backlight_off_delay & 0x1fff);
++		gtt_write(0xc720c, reg32);
++	}
++
++	/* Setup Panel Power Cycle Delay */
++	if (conf->gpu_panel_power_cycle_delay) {
++		reg32 = gtt_read(0xc7210);
++		reg32 &= ~0xff;
++		reg32 |= conf->gpu_panel_power_cycle_delay & 0xff;
++		gtt_write(0xc7210, reg32);
++	}
++}
++
++static void gma_func0_init(struct device *dev)
++{
++	u32 reg32;
++
++	/* IGD needs to be Bus Master */
++	reg32 = pci_read_config32(dev, PCI_COMMAND);
++	reg32 |= PCI_COMMAND_MASTER | PCI_COMMAND_MEMORY | PCI_COMMAND_IO;
++	pci_write_config32(dev, PCI_COMMAND, reg32);
++
++	/* Init graphics power management */
++	gma_pm_init_pre_vbios(dev);
++
++	/* PCI Init, will run VBIOS */
++	pci_dev_init(dev);
++
++	/* Post VBIOS init */
++	gma_pm_init_post_vbios(dev);
++}
++
++static void gma_set_subsystem(device_t dev, unsigned vendor, unsigned device)
++{
++	if (!vendor || !device) {
++		pci_write_config32(dev, PCI_SUBSYSTEM_VENDOR_ID,
++				pci_read_config32(dev, PCI_VENDOR_ID));
++	} else {
++		pci_write_config32(dev, PCI_SUBSYSTEM_VENDOR_ID,
++				((device & 0xffff) << 16) | (vendor & 0xffff));
++	}
++}
++
++static struct pci_operations gma_pci_ops = {
++	.set_subsystem    = gma_set_subsystem,
++};
++
++static struct device_operations gma_func0_ops = {
++	.read_resources		= pci_dev_read_resources,
++	.set_resources		= pci_dev_set_resources,
++	.enable_resources	= pci_dev_enable_resources,
++	.init			= gma_func0_init,
++	.scan_bus		= 0,
++	.enable			= 0,
++	.ops_pci		= &gma_pci_ops,
++};
++
++static const struct pci_driver gma_gt1_desktop __pci_driver = {
++	.ops	= &gma_func0_ops,
++	.vendor	= PCI_VENDOR_ID_INTEL,
++	.device	= 0x0102,
++};
++
++static const struct pci_driver gma_gt1_mobile __pci_driver = {
++	.ops	= &gma_func0_ops,
++	.vendor	= PCI_VENDOR_ID_INTEL,
++	.device	= 0x0106,
++};
++
++static const struct pci_driver gma_gt1_server __pci_driver = {
++	.ops	= &gma_func0_ops,
++	.vendor	= PCI_VENDOR_ID_INTEL,
++	.device	= 0x010a,
++};
++
++static const struct pci_driver gma_gt2_desktop __pci_driver = {
++	.ops	= &gma_func0_ops,
++	.vendor	= PCI_VENDOR_ID_INTEL,
++	.device	= 0x0112,
++};
++
++static const struct pci_driver gma_gt2_mobile __pci_driver = {
++	.ops	= &gma_func0_ops,
++	.vendor	= PCI_VENDOR_ID_INTEL,
++	.device	= 0x0116,
++};
++
++static const struct pci_driver gma_gt2_desktop_fast __pci_driver = {
++	.ops	= &gma_func0_ops,
++	.vendor	= PCI_VENDOR_ID_INTEL,
++	.device	= 0x0122,
++};
++
++static const struct pci_driver gma_gt2_mobile_fast __pci_driver = {
++	.ops	= &gma_func0_ops,
++	.vendor	= PCI_VENDOR_ID_INTEL,
++	.device	= 0x0126,
++};
++
++static const struct pci_driver gma_func0_driver_3 __pci_driver = {
++	.ops    = &gma_func0_ops,
++	.vendor = PCI_VENDOR_ID_INTEL,
++	.device = 0x0166,
++};
+diff --git a/src/northbridge/intel/sandybridge/northbridge.c b/src/northbridge/intel/sandybridge/northbridge.c
+new file mode 100644
+index 0000000000..e3334c45a6
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/northbridge.c
+@@ -0,0 +1,483 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2009 coresystems GmbH
++ * Copyright (C) 2011 The ChromiumOS Authors.  All rights reserved.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <console/console.h>
++#include <arch/acpi.h>
++#include <arch/io.h>
++#include <stdint.h>
++#include <delay.h>
++#include <cpu/intel/model_206ax/model_206ax.h>
++#include <device/device.h>
++#include <device/pci.h>
++#include <device/pci_ids.h>
++#include <device/hypertransport.h>
++#include <stdlib.h>
++#include <string.h>
++#include <bitops.h>
++#include <cpu/cpu.h>
++#include <boot/tables.h>
++#include "chip.h"
++#include "sandybridge.h"
++
++static int bridge_revision_id = -1;
++
++int bridge_silicon_revision(void)
++{
++	if (bridge_revision_id < 0) {
++		uint8_t stepping = cpuid_eax(1) & 0xf;
++		uint8_t bridge_id = pci_read_config16(
++			dev_find_slot(0, PCI_DEVFN(0, 0)),
++			PCI_DEVICE_ID) & 0xf0;
++		bridge_revision_id = bridge_id | stepping;
++	}
++	return bridge_revision_id;
++}
++
++/* Reserve everything between A segment and 1MB:
++ *
++ * 0xa0000 - 0xbffff: legacy VGA
++ * 0xc0000 - 0xcffff: VGA OPROM (needed by kernel)
++ * 0xe0000 - 0xfffff: SeaBIOS, if used, otherwise DMI
++ */
++static const int legacy_hole_base_k = 0xa0000 / 1024;
++static const int legacy_hole_size_k = 384;
++
++int add_northbridge_resources(struct lb_memory *mem)
++{
++	lb_add_memory_range(mem, LB_MEM_RESERVED,
++		legacy_hole_base_k * 1024, legacy_hole_size_k * 1024);
++
++#if CONFIG_CHROMEOS_RAMOOPS
++	lb_add_memory_range(mem, LB_MEM_RESERVED,
++		CONFIG_CHROMEOS_RAMOOPS_RAM_START,
++		CONFIG_CHROMEOS_RAMOOPS_RAM_SIZE);
++#endif
++
++	/* Required for SandyBridge sighting 3715511 */
++	lb_add_memory_range(mem, LB_MEM_RESERVED, 0x20000000, 0x00200000);
++	lb_add_memory_range(mem, LB_MEM_RESERVED, 0x40000000, 0x00200000);
++
++	return 0;
++}
++
++static int get_pcie_bar(u32 *base, u32 *len)
++{
++	device_t dev;
++	u32 pciexbar_reg;
++
++	*base = 0;
++	*len = 0;
++
++	dev = dev_find_slot(0, PCI_DEVFN(0, 0));
++	if (!dev)
++		return 0;
++
++	pciexbar_reg = pci_read_config32(dev, PCIEXBAR);
++
++	if (!(pciexbar_reg & (1 << 0)))
++		return 0;
++
++	switch ((pciexbar_reg >> 1) & 3) {
++	case 0: // 256MB
++		*base = pciexbar_reg & ((1 << 31)|(1 << 30)|(1 << 29)|(1 << 28));
++		*len = 256 * 1024 * 1024;
++		return 1;
++	case 1: // 128M
++		*base = pciexbar_reg & ((1 << 31)|(1 << 30)|(1 << 29)|(1 << 28)|(1 << 27));
++		*len = 128 * 1024 * 1024;
++		return 1;
++	case 2: // 64M
++		*base = pciexbar_reg & ((1 << 31)|(1 << 30)|(1 << 29)|(1 << 28)|(1 << 27)|(1 << 26));
++		*len = 64 * 1024 * 1024;
++		return 1;
++	}
++
++	return 0;
++}
++
++/* IDG memory */
++uint64_t uma_memory_base=0, uma_memory_size=0;
++
++static void add_fixed_resources(struct device *dev, int index)
++{
++	struct resource *resource;
++	u32 pcie_config_base, pcie_config_size;
++
++	printk(BIOS_DEBUG, "Adding UMA memory area base=0x%llx "
++	       "size=0x%llx\n", uma_memory_base, uma_memory_size);
++	resource = new_resource(dev, index);
++	resource->base = (resource_t) uma_memory_base;
++	resource->size = (resource_t) uma_memory_size;
++	resource->flags = IORESOURCE_MEM | IORESOURCE_RESERVE |
++	    IORESOURCE_FIXED | IORESOURCE_STORED | IORESOURCE_ASSIGNED;
++
++	/* Clear these values here so they don't get used by MTRR code */
++	uma_memory_base = 0;
++	uma_memory_size = 0;
++
++	if (get_pcie_bar(&pcie_config_base, &pcie_config_size)) {
++		printk(BIOS_DEBUG, "Adding PCIe config bar base=0x%08x "
++		       "size=0x%x\n", pcie_config_base, pcie_config_size);
++		resource = new_resource(dev, index+1);
++		resource->base = (resource_t) pcie_config_base;
++		resource->size = (resource_t) pcie_config_size;
++		resource->flags = IORESOURCE_MEM | IORESOURCE_RESERVE |
++		    IORESOURCE_FIXED | IORESOURCE_STORED | IORESOURCE_ASSIGNED;
++	}
++}
++
++#if CONFIG_WRITE_HIGH_TABLES==1
++#include <cbmem.h>
++#endif
++
++static void pci_domain_set_resources(device_t dev)
++{
++	uint64_t tom, me_base, touud;
++	uint32_t tseg_base, uma_size, tolud;
++	uint16_t ggc;
++	unsigned long long tomk;
++
++	/* Total Memory 2GB example:
++	 *
++	 *  00000000  0000MB-1992MB  1992MB  RAM     (writeback)
++	 *  7c800000  1992MB-2000MB     8MB  TSEG    (SMRR)
++	 *  7d000000  2000MB-2002MB     2MB  GFX GTT (uncached)
++	 *  7d200000  2002MB-2034MB    32MB  GFX UMA (uncached)
++	 *  7f200000   2034MB TOLUD
++	 *  7f800000   2040MB MEBASE
++	 *  7f800000  2040MB-2048MB     8MB  ME UMA  (uncached)
++	 *  80000000   2048MB TOM
++	 * 100000000  4096MB-4102MB     6MB  RAM     (writeback)
++	 *
++	 * Total Memory 4GB example:
++	 *
++	 *  00000000  0000MB-2768MB  2768MB  RAM     (writeback)
++	 *  ad000000  2768MB-2776MB     8MB  TSEG    (SMRR)
++	 *  ad800000  2776MB-2778MB     2MB  GFX GTT (uncached)
++	 *  ada00000  2778MB-2810MB    32MB  GFX UMA (uncached)
++	 *  afa00000   2810MB TOLUD
++	 *  ff800000   4088MB MEBASE
++	 *  ff800000  4088MB-4096MB     8MB  ME UMA  (uncached)
++	 * 100000000   4096MB TOM
++	 * 100000000  4096MB-5374MB  1278MB  RAM     (writeback)
++	 * 14fe00000   5368MB TOUUD
++	 */
++
++	/* Top of Upper Usable DRAM, including remap */
++	touud = pci_read_config32(dev, TOUUD+4);
++	touud <<= 32;
++	touud |= pci_read_config32(dev, TOUUD);
++
++	/* Top of Lower Usable DRAM */
++	tolud = pci_read_config32(dev, TOLUD);
++
++	/* Top of Memory - does not account for any UMA */
++	tom = pci_read_config32(dev, 0xa4);
++	tom <<= 32;
++	tom |= pci_read_config32(dev, 0xa0);
++
++	printk(BIOS_DEBUG, "TOUUD 0x%llx TOLUD 0x%08x TOM 0x%llx\n",
++	       touud, tolud, tom);
++
++	/* ME UMA needs excluding if total memory <4GB */
++	me_base = pci_read_config32(dev, 0x74);
++	me_base <<= 32;
++	me_base |= pci_read_config32(dev, 0x70);
++
++	printk(BIOS_DEBUG, "MEBASE 0x%llx\n", me_base);
++
++	tomk = tolud >> 10;
++	if (me_base == tolud) {
++		/* ME is from MEBASE-TOM */
++		uma_size = (tom - me_base) >> 10;
++		/* Increment TOLUD to account for ME as RAM */
++		tolud += uma_size << 10;
++		/* UMA starts at old TOLUD */
++		uma_memory_base = tomk * 1024ULL;
++		uma_memory_size = uma_size * 1024ULL;
++		printk(BIOS_DEBUG, "ME UMA base 0x%llx size %uM\n",
++		       me_base, uma_size >> 10);
++	}
++
++	/* Graphics memory comes next */
++	ggc = pci_read_config16(dev, GGC);
++	if (!(ggc & 2)) {
++		printk(BIOS_DEBUG, "IGD decoded, subtracting ");
++
++		/* Graphics memory */
++		uma_size = ((ggc >> 3) & 0x1f) * 32 * 1024ULL;
++		printk(BIOS_DEBUG, "%uM UMA", uma_size >> 10);
++		tomk -= uma_size;
++		uma_memory_base = tomk * 1024ULL;
++		uma_memory_size += uma_size * 1024ULL;
++
++		/* GTT Graphics Stolen Memory Size (GGMS) */
++		uma_size = ((ggc >> 8) & 0x3) * 1024ULL;
++		tomk -= uma_size;
++		uma_memory_base = tomk * 1024ULL;
++		uma_memory_size += uma_size * 1024ULL;
++		printk(BIOS_DEBUG, " and %uM GTT\n", uma_size >> 10);
++	}
++
++	/* Calculate TSEG size from its base which must be below GTT */
++	tseg_base = pci_read_config32(dev, 0xb8);
++	uma_size = (uma_memory_base - tseg_base) >> 10;
++	tomk -= uma_size;
++	uma_memory_base = tomk * 1024ULL;
++	uma_memory_size += uma_size * 1024ULL;
++	printk(BIOS_DEBUG, "TSEG base 0x%08x size %uM\n",
++	       tseg_base, uma_size >> 10);
++
++	printk(BIOS_INFO, "Available memory below 4GB: %lluM\n", tomk >> 10);
++
++	/* Report the memory regions */
++	ram_resource(dev, 3, 0, legacy_hole_base_k);
++	ram_resource(dev, 4, legacy_hole_base_k + legacy_hole_size_k,
++	     (tomk - (legacy_hole_base_k + legacy_hole_size_k)));
++
++	/*
++	 * If >= 4GB installed then memory from TOLUD to 4GB
++	 * is remapped above TOM, TOUUD will account for both
++	 */
++	touud >>= 10; /* Convert to KB */
++	if (touud > 4096 * 1024) {
++		ram_resource(dev, 5, 4096 * 1024, touud - (4096 * 1024));
++		printk(BIOS_INFO, "Available memory above 4GB: %lluM\n",
++		       (touud >> 10) - 4096);
++	}
++
++	add_fixed_resources(dev, 6);
++
++	assign_resources(dev->link_list);
++
++#if CONFIG_WRITE_HIGH_TABLES==1
++	/* Leave some space for ACPI, PIRQ and MP tables */
++	high_tables_base = (tomk * 1024) - HIGH_MEMORY_SIZE;
++	high_tables_size = HIGH_MEMORY_SIZE;
++#endif
++}
++
++	/* TODO We could determine how many PCIe busses we need in
++	 * the bar. For now that number is hardcoded to a max of 64.
++	 * See e7525/northbridge.c for an example.
++	 */
++static struct device_operations pci_domain_ops = {
++	.read_resources   = pci_domain_read_resources,
++	.set_resources    = pci_domain_set_resources,
++	.enable_resources = NULL,
++	.init             = NULL,
++	.scan_bus         = pci_domain_scan_bus,
++#if CONFIG_MMCONF_SUPPORT_DEFAULT
++	.ops_pci_bus	  = &pci_ops_mmconf,
++#else
++	.ops_pci_bus	  = &pci_cf8_conf1,
++#endif
++};
++
++static void mc_read_resources(device_t dev)
++{
++	struct resource *resource;
++
++	pci_dev_read_resources(dev);
++
++	/* So, this is one of the big mysteries in the coreboot resource
++	 * allocator. This resource should make sure that the address space
++	 * of the PCIe memory mapped config space bar. But it does not.
++	 */
++
++	/* We use 0xcf as an unused index for our PCIe bar so that we find it again */
++	resource = new_resource(dev, 0xcf);
++	resource->base = DEFAULT_PCIEXBAR;
++	resource->size = 64 * 1024 * 1024;	/* 64MB hard coded PCIe config space */
++	resource->flags =
++	    IORESOURCE_MEM | IORESOURCE_FIXED | IORESOURCE_STORED |
++	    IORESOURCE_ASSIGNED;
++	printk(BIOS_DEBUG, "Adding PCIe enhanced config space BAR 0x%08lx-0x%08lx.\n",
++		     (unsigned long)(resource->base), (unsigned long)(resource->base + resource->size));
++}
++
++static void mc_set_resources(device_t dev)
++{
++	struct resource *resource;
++
++	/* Report the PCIe BAR */
++	resource = find_resource(dev, 0xcf);
++	if (resource) {
++		report_resource_stored(dev, resource, "<mmconfig>");
++	}
++
++	/* And call the normal set_resources */
++	pci_dev_set_resources(dev);
++}
++
++static void intel_set_subsystem(device_t dev, unsigned vendor, unsigned device)
++{
++	if (!vendor || !device) {
++		pci_write_config32(dev, PCI_SUBSYSTEM_VENDOR_ID,
++				pci_read_config32(dev, PCI_VENDOR_ID));
++	} else {
++		pci_write_config32(dev, PCI_SUBSYSTEM_VENDOR_ID,
++				((device & 0xffff) << 16) | (vendor & 0xffff));
++	}
++}
++
++static void northbridge_dmi_init(struct device *dev)
++{
++	u32 reg32;
++
++	/* Clear error status bits */
++	DMIBAR32(0x1c4) = 0xffffffff;
++	DMIBAR32(0x1d0) = 0xffffffff;
++
++	/* Steps prior to DMI ASPM */
++	reg32 = DMIBAR32(0x250);
++	reg32 &= ~((1 << 22)|(1 << 20));
++	reg32 |= (1 << 21);
++	DMIBAR32(0x250) = reg32;
++
++	reg32 = DMIBAR32(0x238);
++	reg32 |= (1 << 29);
++	DMIBAR32(0x238) = reg32;
++
++	if (bridge_silicon_revision() >= SNB_STEP_D0) {
++		reg32 = DMIBAR32(0x1f8);
++		reg32 |= (1 << 16);
++		DMIBAR32(0x1f8) = reg32;
++	} else if (bridge_silicon_revision() >= SNB_STEP_D1) {
++		reg32 = DMIBAR32(0x1f8);
++		reg32 &= ~(1 << 26);
++		reg32 |= (1 << 16);
++		DMIBAR32(0x1f8) = reg32;
++
++		reg32 = DMIBAR32(0x1fc);
++		reg32 |= (1 << 12) | (1 << 23);
++		DMIBAR32(0x1fc) = reg32;
++	}
++
++	/* Enable ASPM on SNB link, should happen before PCH link */
++	reg32 = DMIBAR32(0xd04);
++	reg32 |= (1 << 4);
++	DMIBAR32(0xd04) = reg32;
++
++	reg32 = DMIBAR32(0x88);
++	reg32 |= (1 << 1) | (1 << 0);
++	DMIBAR32(0x88) = reg32;
++}
++
++static void northbridge_init(struct device *dev)
++{
++	u8 bios_reset_cpl;
++
++	northbridge_dmi_init(dev);
++
++	/*
++	 * Set bit 0 of BIOS_RESET_CPL to indicate to the CPU
++	 * that BIOS has initialized memory and power management
++	 */
++	bios_reset_cpl = MCHBAR8(BIOS_RESET_CPL);
++	bios_reset_cpl |= 1;
++	MCHBAR8(BIOS_RESET_CPL) = bios_reset_cpl;
++	printk(BIOS_DEBUG, "Set BIOS_RESET_CPL\n");
++
++	/* Configure turbo power limits 1ms after reset complete bit */
++	mdelay(1);
++	set_power_limits(28);
++
++	/* Set here before graphics PM init */
++	MCHBAR32(0x5500) = 0x00100001;
++}
++
++static void northbridge_enable(device_t dev)
++{
++#if CONFIG_HAVE_ACPI_RESUME
++	switch (pci_read_config32(dev, SKPAD)) {
++	case 0xcafebabe:
++		printk(BIOS_DEBUG, "Normal boot.\n");
++		acpi_slp_type=0;
++		break;
++	case 0xcafed00d:
++		printk(BIOS_DEBUG, "S3 Resume.\n");
++		acpi_slp_type=3;
++		break;
++	default:
++		printk(BIOS_DEBUG, "Unknown boot method, assuming normal.\n");
++		acpi_slp_type=0;
++		break;
++	}
++#endif
++}
++
++static struct pci_operations intel_pci_ops = {
++	.set_subsystem    = intel_set_subsystem,
++};
++
++static struct device_operations mc_ops = {
++	.read_resources   = mc_read_resources,
++	.set_resources    = mc_set_resources,
++	.enable_resources = pci_dev_enable_resources,
++	.init             = northbridge_init,
++	.enable           = northbridge_enable,
++	.scan_bus         = 0,
++	.ops_pci          = &intel_pci_ops,
++};
++
++static const struct pci_driver mc_driver __pci_driver = {
++	.ops    = &mc_ops,
++	.vendor = PCI_VENDOR_ID_INTEL,
++	.device = 0x0104, /* Sandy bridge */
++};
++
++static const struct pci_driver mc_driver_1 __pci_driver = {
++	.ops    = &mc_ops,
++	.vendor = PCI_VENDOR_ID_INTEL,
++	.device = 0x0154, /* Ivy bridge */
++};
++
++static void cpu_bus_init(device_t dev)
++{
++	initialize_cpus(dev->link_list);
++}
++
++static void cpu_bus_noop(device_t dev)
++{
++}
++
++static struct device_operations cpu_bus_ops = {
++	.read_resources   = cpu_bus_noop,
++	.set_resources    = cpu_bus_noop,
++	.enable_resources = cpu_bus_noop,
++	.init             = cpu_bus_init,
++	.scan_bus         = 0,
++};
++
++static void enable_dev(device_t dev)
++{
++	/* Set the operations if it is a special bus type */
++	if (dev->path.type == DEVICE_PATH_PCI_DOMAIN) {
++		dev->ops = &pci_domain_ops;
++	} else if (dev->path.type == DEVICE_PATH_APIC_CLUSTER) {
++		dev->ops = &cpu_bus_ops;
++	}
++}
++
++struct chip_operations northbridge_intel_sandybridge_ops = {
++	CHIP_NAME("Intel i7 (Sandybridge) integrated Northbridge")
++	.enable_dev = enable_dev,
++};
+diff --git a/src/northbridge/intel/sandybridge/pcie_config.c b/src/northbridge/intel/sandybridge/pcie_config.c
+new file mode 100644
+index 0000000000..21e131f566
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/pcie_config.c
+@@ -0,0 +1,89 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2009 coresystems GmbH
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include "sandybridge.h"
++
++static inline __attribute__ ((always_inline))
++u8 pcie_read_config8(device_t dev, unsigned int where)
++{
++	unsigned long addr;
++	addr = DEFAULT_PCIEXBAR | dev | where;
++	return read8(addr);
++}
++
++static inline __attribute__ ((always_inline))
++u16 pcie_read_config16(device_t dev, unsigned int where)
++{
++	unsigned long addr;
++	addr = DEFAULT_PCIEXBAR | dev | where;
++	return read16(addr);
++}
++
++static inline __attribute__ ((always_inline))
++u32 pcie_read_config32(device_t dev, unsigned int where)
++{
++	unsigned long addr;
++	addr = DEFAULT_PCIEXBAR | dev | where;
++	return read32(addr);
++}
++
++static inline __attribute__ ((always_inline))
++void pcie_write_config8(device_t dev, unsigned int where, u8 value)
++{
++	unsigned long addr;
++	addr = DEFAULT_PCIEXBAR | dev | where;
++	write8(addr, value);
++}
++
++static inline __attribute__ ((always_inline))
++void pcie_write_config16(device_t dev, unsigned int where, u16 value)
++{
++	unsigned long addr;
++	addr = DEFAULT_PCIEXBAR | dev | where;
++	write16(addr, value);
++}
++
++static inline __attribute__ ((always_inline))
++void pcie_write_config32(device_t dev, unsigned int where, u32 value)
++{
++	unsigned long addr;
++	addr = DEFAULT_PCIEXBAR | dev | where;
++	write32(addr, value);
++}
++
++static inline __attribute__ ((always_inline))
++void pcie_or_config8(device_t dev, unsigned int where, u8 ormask)
++{
++	u8 value = pcie_read_config8(dev, where);
++	pcie_write_config8(dev, where, value | ormask);
++}
++
++static inline __attribute__ ((always_inline))
++void pcie_or_config16(device_t dev, unsigned int where, u16 ormask)
++{
++	u16 value = pcie_read_config16(dev, where);
++	pcie_write_config16(dev, where, value | ormask);
++}
++
++static inline __attribute__ ((always_inline))
++void pcie_or_config32(device_t dev, unsigned int where, u32 ormask)
++{
++	u32 value = pcie_read_config32(dev, where);
++	pcie_write_config32(dev, where, value | ormask);
++}
+diff --git a/src/northbridge/intel/sandybridge/pei_data.h b/src/northbridge/intel/sandybridge/pei_data.h
+new file mode 100644
+index 0000000000..cda08b2d3f
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/pei_data.h
+@@ -0,0 +1,98 @@
++/*
++ * coreboot UEFI PEI wrapper
++ *
++ * Copyright (c) 2011, Google Inc.
++ * All rights reserved.
++ *
++ * Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are met:
++ *     * Redistributions of source code must retain the above copyright
++ *       notice, this list of conditions and the following disclaimer.
++ *     * Redistributions in binary form must reproduce the above copyright
++ *       notice, this list of conditions and the following disclaimer in the
++ *       documentation and/or other materials provided with the distribution.
++ *     * Neither the name of Google Inc. nor the
++ *       names of its contributors may be used to endorse or promote products
++ *       derived from this software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
++ * ARE DISCLAIMED. IN NO EVENT SHALL GOOGLE INC BE LIABLE FOR ANY DIRECT,
++ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
++ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
++ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
++ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
++ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ */
++
++#ifndef PEI_DATA_H
++#define PEI_DATA_H
++
++#define PEI_VERSION 1
++struct pei_data
++{
++	uint32_t pei_version;
++	uint32_t mchbar;
++	uint32_t dmibar;
++	uint32_t epbar;
++	uint32_t pciexbar;
++	uint16_t smbusbar;
++	uint32_t wdbbar;
++	uint32_t wdbsize;
++	uint32_t hpet_address;
++	uint32_t rcba;
++	uint32_t pmbase;
++	uint32_t gpiobase;
++	uint32_t thermalbase;
++	uint32_t system_type; // 0 Mobile, 1 Desktop/Server
++	uint32_t tseg_size;
++	uint8_t spd_addresses[4];
++	uint8_t ts_addresses[4];
++	int boot_mode;
++	int ec_present;
++	// 0 = leave channel enabled
++	// 1 = disable dimm 0 on channel
++	// 2 = disable dimm 1 on channel
++	// 3 = disable dimm 0+1 on channel
++	int dimm_channel0_disabled;
++	int dimm_channel1_disabled;
++	/* Seed values saved in CMOS */
++	uint32_t scrambler_seed;
++	uint32_t scrambler_seed_s3;
++	/* Data read from flash and passed into MRC */
++	unsigned char *mrc_input;
++	unsigned int mrc_input_len;
++	/* Data from MRC that should be saved to flash */
++	unsigned char *mrc_output;
++	unsigned int mrc_output_len;
++	/*
++	 * Max frequency DDR3 could be ran at. Could be one of four values:
++	 * 800, 1067, 1333, 1600
++	 */
++	uint32_t max_ddr3_freq;
++	/*
++	 * USB Port Configuration:
++	 *  [0] = enable
++	 *  [1] = overcurrent pin
++	 *  [2] = length
++	 *
++	 * Port Length
++	 *  MOBILE:
++	 *   < 0x050 = Setting 1 (back panel, 1-5in, lowest tx amplitude)
++	 *   < 0x140 = Setting 2 (back panel, 5-14in, highest tx amplitude)
++	 *  DESKTOP:
++	 *   < 0x080 = Setting 1 (front/back panel, <8in, lowest tx amplitude)
++	 *   < 0x130 = Setting 2 (back panel, 8-13in, higher tx amplitude)
++	 *   < 0x150 = Setting 3 (back panel, 13-15in, higest tx amplitude)
++	 */
++	uint16_t usb_port_config[16][3];
++	/* SPD data array for onboard RAM. Specify address 0xf0,
++	 * 0xf1, 0xf2, 0xf3 to index one of the 4 slots in
++	 * spd_address for a given "DIMM".
++	 */
++	uint8_t spd_data[4][256];
++} __attribute__((packed));
++
++#endif
+diff --git a/src/northbridge/intel/sandybridge/raminit.c b/src/northbridge/intel/sandybridge/raminit.c
+new file mode 100644
+index 0000000000..0da968d776
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/raminit.c
+@@ -0,0 +1,383 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2011 Google Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <console/console.h>
++#include <string.h>
++#include <arch/hlt.h>
++#include <arch/io.h>
++#include <arch/romcc_io.h>
++#include <cbmem.h>
++#include <arch/cbfs.h>
++#include <cbfs.h>
++#include <ip_checksum.h>
++#include <pc80/mc146818rtc.h>
++#include "raminit.h"
++#include "pei_data.h"
++#include "sandybridge.h"
++
++/* Management Engine is in the southbridge */
++#include "southbridge/intel/bd82x6x/me.h"
++#if CONFIG_CHROMEOS
++#include <vendorcode/google/chromeos/chromeos.h>
++#endif
++#if 0
++#include <fdt/libfdt.h>
++#endif
++
++/*
++ * MRC scrambler seed offsets should be reserved in
++ * mainboard cmos.layout and not covered by checksum.
++ */
++#if CONFIG_USE_OPTION_TABLE
++#include "option_table.h"
++#define CMOS_OFFSET_MRC_SEED     (CMOS_VSTART_mrc_scrambler_seed >> 3)
++#define CMOS_OFFSET_MRC_SEED_S3  (CMOS_VSTART_mrc_scrambler_seed_s3 >> 3)
++#define CMOS_OFFSET_MRC_SEED_CHK (CMOS_VSTART_mrc_scrambler_seed_chk >> 3)
++#else
++#define CMOS_OFFSET_MRC_SEED     112
++#define CMOS_OFFSET_MRC_SEED_S3  116
++#define CMOS_OFFSET_MRC_SEED_CHK 120
++#endif
++
++#define MRC_DATA_ALIGN           0x1000
++#define MRC_DATA_SIGNATURE       (('M'<<0)|('R'<<8)|('C'<<16)|('D'<<24))
++
++struct mrc_data_container {
++	u32	mrc_signature;	// "MRCD"
++	u32	mrc_data_size;	// Actual total size of this structure
++	u32	mrc_checksum;	// IP style checksum
++	u32	reserved;	// For header alignment
++	u8	mrc_data[0];	// Variable size, platform/run time dependent.
++} __attribute__ ((packed));
++
++static void save_mrc_data(struct pei_data *pei_data)
++{
++	u16 c1, c2, checksum;
++
++#if CONFIG_EARLY_CBMEM_INIT
++	struct mrc_data_container *mrcdata;
++	int output_len = ALIGN(pei_data->mrc_output_len, 16);
++
++	/* Save the MRC S3 restore data to cbmem */
++	cbmem_initialize();
++	mrcdata = cbmem_add
++		(CBMEM_ID_MRCDATA,
++		 output_len + sizeof(struct mrc_data_container));
++
++	printk(BIOS_DEBUG, "Relocate MRC DATA from %p to %p (%u bytes)\n",
++	       pei_data->mrc_output, mrcdata, output_len);
++
++	mrcdata->mrc_signature = MRC_DATA_SIGNATURE;
++	mrcdata->mrc_data_size = output_len;
++	mrcdata->reserved = 0;
++	memcpy(mrcdata->mrc_data, pei_data->mrc_output,
++	       pei_data->mrc_output_len);
++
++	/* Zero the unused space in aligned buffer. */
++	if (output_len > pei_data->mrc_output_len)
++		memset(mrcdata->mrc_data+pei_data->mrc_output_len, 0,
++		       output_len - pei_data->mrc_output_len);
++
++	mrcdata->mrc_checksum = compute_ip_checksum(mrcdata->mrc_data,
++						    mrcdata->mrc_data_size);
++#endif
++
++	/* Save the MRC seed values to CMOS */
++	cmos_write32(CMOS_OFFSET_MRC_SEED, pei_data->scrambler_seed);
++	printk(BIOS_DEBUG, "Save scrambler seed    0x%08x to CMOS 0x%02x\n",
++	       pei_data->scrambler_seed, CMOS_OFFSET_MRC_SEED);
++
++	cmos_write32(CMOS_OFFSET_MRC_SEED_S3, pei_data->scrambler_seed_s3);
++	printk(BIOS_DEBUG, "Save s3 scrambler seed 0x%08x to CMOS 0x%02x\n",
++	       pei_data->scrambler_seed_s3, CMOS_OFFSET_MRC_SEED_S3);
++
++	/* Save a simple checksum of the seed values */
++	c1 = compute_ip_checksum((u8*)&pei_data->scrambler_seed,
++				 sizeof(u32));
++	c2 = compute_ip_checksum((u8*)&pei_data->scrambler_seed_s3,
++				 sizeof(u32));
++	checksum = add_ip_checksums(sizeof(u32), c1, c2);
++
++	cmos_write(checksum & 0xff, CMOS_OFFSET_MRC_SEED_CHK);
++	cmos_write((checksum >> 8) & 0xff, CMOS_OFFSET_MRC_SEED_CHK+1);
++}
++
++#if CONFIG_CHROMEOS
++static void prepare_mrc_cache(struct pei_data *pei_data)
++{
++	const struct fdt_header *fdt_header;
++	const struct fdt_property *fdtp;
++	int offset, len;
++	const char *compatible = "chromeos,flashmap";
++	const char *subnode = "rw-mrc-cache";
++	const char *property = "reg";
++	u32 *data;
++	struct mrc_data_container *mrc_cache, *mrc_next;
++	u8 *mrc_region, *region_ptr;
++	u16 c1, c2, checksum, seed_checksum;
++	u32 region_size, entry_id = 0;
++	u64 flashrom_base = 0;
++
++	// preset just in case there is an error
++	pei_data->mrc_input = NULL;
++	pei_data->mrc_input_len = 0;
++
++	/* Read scrambler seeds from CMOS */
++	pei_data->scrambler_seed = cmos_read32(CMOS_OFFSET_MRC_SEED);
++	printk(BIOS_DEBUG, "Read scrambler seed    0x%08x from CMOS 0x%02x\n",
++	       pei_data->scrambler_seed, CMOS_OFFSET_MRC_SEED);
++
++	pei_data->scrambler_seed_s3 = cmos_read32(CMOS_OFFSET_MRC_SEED_S3);
++	printk(BIOS_DEBUG, "Read S3 scrambler seed 0x%08x from CMOS 0x%02x\n",
++	       pei_data->scrambler_seed_s3, CMOS_OFFSET_MRC_SEED_S3);
++
++	/* Compute seed checksum and compare */
++	c1 = compute_ip_checksum((u8*)&pei_data->scrambler_seed,
++				 sizeof(u32));
++	c2 = compute_ip_checksum((u8*)&pei_data->scrambler_seed_s3,
++				 sizeof(u32));
++	checksum = add_ip_checksums(sizeof(u32), c1, c2);
++
++	seed_checksum = cmos_read(CMOS_OFFSET_MRC_SEED_CHK);
++	seed_checksum |= cmos_read(CMOS_OFFSET_MRC_SEED_CHK+1) << 8;
++
++	if (checksum != seed_checksum) {
++		printk(BIOS_ERR, "%s: invalid seed checksum\n", __func__);
++		pei_data->scrambler_seed = 0;
++		pei_data->scrambler_seed_s3 = 0;
++		return;
++	}
++
++	fdt_header = cbfs_find_file(CONFIG_FDT_FILE_NAME, CBFS_TYPE_FDT);
++
++	if (!fdt_header) {
++		printk(BIOS_ERR, "%s: no FDT found!\n", __func__);
++		return;
++	}
++
++	offset = fdt_node_offset_by_compatible(fdt_header, 0, compatible);
++	if (offset < 0) {
++		printk(BIOS_ERR, "%s: no %s  node found!\n",
++		       __func__, compatible);
++		return;
++	}
++
++	if (fdt_get_base_addr(fdt_header, offset, &flashrom_base) < 0) {
++		printk(BIOS_ERR, "%s: no base address in node name!\n",
++		       __func__);
++		return;
++	}
++
++	offset = fdt_subnode_offset(fdt_header, offset, subnode);
++	if (offset < 0) {
++		printk(BIOS_ERR, "%s: no %s found!\n", __func__, subnode);
++		return;
++	}
++
++	fdtp = fdt_get_property(fdt_header, offset, property, &len);
++	if (!fdtp || (len != 8)) {
++		printk(BIOS_ERR, "%s: property %s at %p, len %d!\n",
++		       __func__, property, fdtp, len);
++		return;
++	}
++
++	data = (u32 *)fdtp->data;
++
++	// Calculate actual address of the MRC cache in memory
++	region_size = fdt32_to_cpu(data[1]);
++	mrc_region = region_ptr = (u8*)
++		((unsigned long)flashrom_base + fdt32_to_cpu(data[0]));
++	mrc_cache = mrc_next = (struct mrc_data_container *)mrc_region;
++
++	if (!mrc_cache || mrc_cache->mrc_signature != MRC_DATA_SIGNATURE) {
++		printk(BIOS_ERR, "%s: invalid MRC data\n", __func__);
++		return;
++	}
++
++	if (mrc_cache->mrc_data_size == -1UL) {
++		printk(BIOS_ERR, "%s: MRC cache not initialized?\n",  __func__);
++		return;
++	} else {
++		/* MRC data blocks are aligned within the region */
++		u32 mrc_size = sizeof(*mrc_cache) + mrc_cache->mrc_data_size;
++		if (mrc_size & (MRC_DATA_ALIGN - 1UL)) {
++			mrc_size &= ~(MRC_DATA_ALIGN - 1UL);
++			mrc_size += MRC_DATA_ALIGN;
++		}
++
++		/* Search for the last filled entry in the region */
++		while (mrc_next &&
++		       mrc_next->mrc_signature == MRC_DATA_SIGNATURE) {
++			entry_id++;
++			mrc_cache = mrc_next;
++			/* Stay in the mrcdata region defined in fdt */
++			if ((entry_id * mrc_size) > region_size)
++				break;
++			region_ptr += mrc_size;
++			mrc_next = (struct mrc_data_container *)region_ptr;
++		}
++		entry_id--;
++	}
++
++	/* Verify checksum */
++	if (mrc_cache->mrc_checksum !=
++	    compute_ip_checksum(mrc_cache->mrc_data,
++				mrc_cache->mrc_data_size)) {
++		printk(BIOS_ERR, "%s: MRC cache checksum mismatch\n", __func__);
++		return;
++	}
++
++	pei_data->mrc_input = mrc_cache->mrc_data;
++	pei_data->mrc_input_len = mrc_cache->mrc_data_size;
++
++	printk(BIOS_DEBUG, "%s: at %p, entry %u size %x checksum %04x\n",
++	       __func__, pei_data->mrc_input, entry_id,
++	       pei_data->mrc_input_len, mrc_cache->mrc_checksum);
++}
++#endif
++
++static const char* ecc_decoder[] = {
++	"inactive",
++	"active on IO",
++	"disabled on IO",
++	"active"
++};
++
++/*
++ * Dump in the log memory controller configuration as read from the memory
++ * controller registers.
++ */
++static void report_memory_config(void)
++{
++	u32 addr_decoder_common, addr_decode_ch[2];
++	int i;
++
++	addr_decoder_common = MCHBAR32(0x5000);
++	addr_decode_ch[0] = MCHBAR32(0x5004);
++	addr_decode_ch[1] = MCHBAR32(0x5008);
++
++	printk(BIOS_DEBUG, "memcfg DDR3 clock %d MHz\n",
++	       (MCHBAR32(0x5e04) * 13333 * 2 + 50)/100);
++	printk(BIOS_DEBUG, "memcfg channel assignment: A: %d, B % d, C % d\n",
++	       addr_decoder_common & 3,
++	       (addr_decoder_common >> 2) & 3,
++	       (addr_decoder_common >> 4) & 3);
++
++	for (i = 0; i < ARRAY_SIZE(addr_decode_ch); i++) {
++		u32 ch_conf = addr_decode_ch[i];
++		printk(BIOS_DEBUG, "memcfg channel[%d] config (%8.8x):\n",
++		       i, ch_conf);
++		printk(BIOS_DEBUG, "   ECC %s\n",
++		       ecc_decoder[(ch_conf >> 24) & 3]);
++		printk(BIOS_DEBUG, "   enhanced interleave mode %s\n",
++		       ((ch_conf >> 22) & 1) ? "on" : "off");
++		printk(BIOS_DEBUG, "   rank interleave %s\n",
++		       ((ch_conf >> 21) & 1) ? "on" : "off");
++		printk(BIOS_DEBUG, "   DIMMA %d MB width x%d %s rank%s\n",
++		       ((ch_conf >> 0) & 0xff) * 256,
++		       ((ch_conf >> 19) & 1) ? 16 : 8,
++		       ((ch_conf >> 17) & 1) ? "dual" : "single",
++		       ((ch_conf >> 16) & 1) ? "" : ", selected");
++		printk(BIOS_DEBUG, "   DIMMB %d MB width x%d %s rank%s\n",
++		       ((ch_conf >> 8) & 0xff) * 256,
++		       ((ch_conf >> 20) & 1) ? 16 : 8,
++		       ((ch_conf >> 18) & 1) ? "dual" : "single",
++		       ((ch_conf >> 16) & 1) ? ", selected" : "");
++	}
++}
++
++/**
++ * Find PEI executable in coreboot filesystem and execute it.
++ *
++ * @param pei_data: configuration data for UEFI PEI reference code
++ */
++void sdram_initialize(struct pei_data *pei_data)
++{
++	struct sys_info sysinfo;
++	const char *target = "mrc.bin";
++	unsigned long entry;
++
++	/* Wait for ME to be ready */
++	intel_early_me_init();
++	intel_early_me_uma_size();
++
++	printk(BIOS_DEBUG, "Starting UEFI PEI System Agent\n");
++
++	memset(&sysinfo, 0, sizeof(sysinfo));
++
++	sysinfo.boot_path = pei_data->boot_mode;
++
++#if CONFIG_CHROMEOS
++	/*
++	 * Do not pass MRC data in for recovery mode boot,
++	 * Always pass it in for S3 resume.
++	 */
++	if (!recovery_mode_enabled() || pei_data->boot_mode == 2)
++		prepare_mrc_cache(pei_data);
++
++	/* If MRC data is not found we cannot continue S3 resume. */
++	if (pei_data->boot_mode == 2 && !pei_data->mrc_input) {
++		outb(0x6, 0xcf9);
++		hlt();
++	}
++#endif
++
++	/* Locate and call UEFI System Agent binary. */
++	entry = (unsigned long)cbfs_find_file(target, 0xab);
++	if (entry) {
++		int rv;
++		asm volatile (
++			      "call *%%ecx\n\t"
++			      :"=a" (rv) : "c" (entry), "a" (pei_data));
++		if (rv) {
++			printk(BIOS_ERR, "MRC returned %d\n", rv);
++			die("Nonzero MRC return value\n");
++		}
++	} else {
++		die("UEFI PEI System Agent not found.\n");
++	}
++
++	/* For reference print the System Agent version
++	 * after executing the UEFI PEI stage.
++	 */
++	u32 version = MCHBAR32(0x5034);
++	printk(BIOS_DEBUG, "System Agent Version %d.%d.%d Build %d\n",
++		version >> 24 , (version >> 16) & 0xff,
++		(version >> 8) & 0xff, version & 0xff);
++
++	intel_early_me_init_done(ME_INIT_STATUS_SUCCESS);
++
++	report_memory_config();
++
++	/* S3 resume: don't save scrambler seed or MRC data */
++	if (pei_data->boot_mode != 2)
++		save_mrc_data(pei_data);
++}
++
++struct cbmem_entry *get_cbmem_toc(void)
++{
++	return (struct cbmem_entry *)(get_top_of_ram() - HIGH_MEMORY_SIZE);
++}
++
++unsigned long get_top_of_ram(void)
++{
++	/* Base of TSEG is top of usable DRAM */
++	u32 tom = pci_read_config32(PCI_DEV(0,0,0), TSEG);
++	return (unsigned long) tom;
++}
+diff --git a/src/northbridge/intel/sandybridge/raminit.h b/src/northbridge/intel/sandybridge/raminit.h
+new file mode 100644
+index 0000000000..124f6943c8
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/raminit.h
+@@ -0,0 +1,36 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2010 Google Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#ifndef RAMINIT_H
++#define RAMINIT_H
++
++#include "pei_data.h"
++
++struct sys_info {
++	u8 boot_path;
++#define BOOT_PATH_NORMAL	0
++#define BOOT_PATH_RESET		1
++#define BOOT_PATH_RESUME	2
++} __attribute__ ((packed));
++
++void sdram_initialize(struct pei_data *pei_data);
++unsigned long get_top_of_ram(void);
++int fixup_sandybridge_errata(void);
++
++#endif				/* RAMINIT_H */
+diff --git a/src/northbridge/intel/sandybridge/sandybridge.h b/src/northbridge/intel/sandybridge/sandybridge.h
+new file mode 100644
+index 0000000000..9ff6555fb5
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/sandybridge.h
+@@ -0,0 +1,224 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2008 coresystems GmbH
++ * Copyright (C) 2011 Google Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#ifndef __NORTHBRIDGE_INTEL_SANDYBRIDGE_SANDYBRIDGE_H__
++#define __NORTHBRIDGE_INTEL_SANDYBRIDGE_SANDYBRIDGE_H__ 1
++
++/* Chipset types */
++#define SANDYBRIDGE_MOBILE	0
++#define SANDYBRIDGE_DESKTOP	1
++#define SANDYBRIDGE_SERVER	2
++
++/* Device ID for SandyBridge and IvyBridge */
++#define BASE_REV_SNB	0x00
++#define BASE_REV_IVB	0x50
++#define BASE_REV_MASK	0x50
++
++/* SandyBridge CPU stepping */
++#define SNB_STEP_D0	(BASE_REV_SNB + 5) /* Also J0 */
++#define SNB_STEP_D1	(BASE_REV_SNB + 6)
++#define SNB_STEP_D2	(BASE_REV_SNB + 7) /* Also J1/Q0 */
++
++/* IvyBridge CPU stepping */
++#define IVB_STEP_A0	(BASE_REV_IVB + 0)
++#define IVB_STEP_B0	(BASE_REV_IVB + 2)
++#define IVB_STEP_C0	(BASE_REV_IVB + 4)
++#define IVB_STEP_K0	(BASE_REV_IVB + 5)
++#define IVB_STEP_D0	(BASE_REV_IVB + 6)
++
++/* Intel Enhanced Debug region must be 4MB */
++#define IED_SIZE	0x400000
++
++/* Northbridge BARs */
++#define DEFAULT_PCIEXBAR	CONFIG_MMCONF_BASE_ADDRESS	/* 4 KB per PCIe device */
++#define DEFAULT_MCHBAR		0xfed10000	/* 16 KB */
++#define DEFAULT_DMIBAR		0xfed18000	/* 4 KB */
++#define DEFAULT_EPBAR		0xfed19000	/* 4 KB */
++
++#include "../../../southbridge/intel/bd82x6x/pch.h"
++
++/* Everything below this line is ignored in the DSDT */
++#ifndef __ACPI__
++
++/* Device 0:0.0 PCI configuration space (Host Bridge) */
++
++#define EPBAR		0x40
++#define MCHBAR		0x48
++#define PCIEXBAR	0x60
++#define DMIBAR		0x68
++#define X60BAR		0x60
++
++#define GGC		0x50			/* GMCH Graphics Control */
++
++#define DEVEN		0x54			/* Device Enable */
++#define  DEVEN_PEG60	(1 << 13)
++#define  DEVEN_IGD	(1 << 4)
++#define  DEVEN_PEG10	(1 << 3)
++#define  DEVEN_PEG11	(1 << 2)
++#define  DEVEN_PEG12	(1 << 1)
++#define  DEVEN_HOST	(1 << 0)
++
++#define PAM0		0x80
++#define PAM1		0x81
++#define PAM2		0x82
++#define PAM3		0x83
++#define PAM4		0x84
++#define PAM5		0x85
++#define PAM6		0x86
++
++#define LAC		0x87	/* Legacy Access Control */
++#define SMRAM		0x88	/* System Management RAM Control */
++#define  D_OPEN		(1 << 6)
++#define  D_CLS		(1 << 5)
++#define  D_LCK		(1 << 4)
++#define  G_SMRAME	(1 << 3)
++#define  C_BASE_SEG	((0 << 2) | (1 << 1) | (0 << 0))
++
++#define TOM		0xa0
++#define TOUUD		0xa8	/* Top of Upper Usable DRAM */
++#define TSEG		0xb8	/* TSEG base */
++#define TOLUD		0xbc	/* Top of Low Used Memory */
++
++#define SKPAD		0xdc	/* Scratchpad Data */
++
++/* Device 0:1.0 PCI configuration space (PCI Express) */
++
++#define BCTRL1		0x3e	/* 16bit */
++
++
++/* Device 0:2.0 PCI configuration space (Graphics Device) */
++
++#define MSAC		0x62	/* Multi Size Aperture Control */
++
++
++/*
++ * MCHBAR
++ */
++
++#define MCHBAR8(x) *((volatile u8 *)(DEFAULT_MCHBAR + x))
++#define MCHBAR16(x) *((volatile u16 *)(DEFAULT_MCHBAR + x))
++#define MCHBAR32(x) *((volatile u32 *)(DEFAULT_MCHBAR + x))
++#define MCHBAR32_OR(x, or) MCHBAR32(x) = (MCHBAR32(x) | (or))
++
++#define SSKPD		0x5d14	/* 16bit (scratchpad) */
++#define BIOS_RESET_CPL	0x5da8	/* 8bit */
++
++/*
++ * EPBAR - Egress Port Root Complex Register Block
++ */
++
++#define EPBAR8(x) *((volatile u8 *)(DEFAULT_EPBAR + x))
++#define EPBAR16(x) *((volatile u16 *)(DEFAULT_EPBAR + x))
++#define EPBAR32(x) *((volatile u32 *)(DEFAULT_EPBAR + x))
++
++#define EPPVCCAP1	0x004	/* 32bit */
++#define EPPVCCAP2	0x008	/* 32bit */
++
++#define EPVC0RCAP	0x010	/* 32bit */
++#define EPVC0RCTL	0x014	/* 32bit */
++#define EPVC0RSTS	0x01a	/* 16bit */
++
++#define EPVC1RCAP	0x01c	/* 32bit */
++#define EPVC1RCTL	0x020	/* 32bit */
++#define EPVC1RSTS	0x026	/* 16bit */
++
++#define EPVC1MTS	0x028	/* 32bit */
++#define EPVC1IST	0x038	/* 64bit */
++
++#define EPESD		0x044	/* 32bit */
++
++#define EPLE1D		0x050	/* 32bit */
++#define EPLE1A		0x058	/* 64bit */
++#define EPLE2D		0x060	/* 32bit */
++#define EPLE2A		0x068	/* 64bit */
++
++#define PORTARB		0x100	/* 256bit */
++
++/*
++ * DMIBAR
++ */
++
++#define DMIBAR8(x) *((volatile u8 *)(DEFAULT_DMIBAR + x))
++#define DMIBAR16(x) *((volatile u16 *)(DEFAULT_DMIBAR + x))
++#define DMIBAR32(x) *((volatile u32 *)(DEFAULT_DMIBAR + x))
++
++#define DMIVCECH	0x000	/* 32bit */
++#define DMIPVCCAP1	0x004	/* 32bit */
++#define DMIPVCCAP2	0x008	/* 32bit */
++
++#define DMIPVCCCTL	0x00c	/* 16bit */
++
++#define DMIVC0RCAP	0x010	/* 32bit */
++#define DMIVC0RCTL0	0x014	/* 32bit */
++#define DMIVC0RSTS	0x01a	/* 16bit */
++
++#define DMIVC1RCAP	0x01c	/* 32bit */
++#define DMIVC1RCTL	0x020	/* 32bit */
++#define DMIVC1RSTS	0x026	/* 16bit */
++
++#define DMILE1D		0x050	/* 32bit */
++#define DMILE1A		0x058	/* 64bit */
++#define DMILE2D		0x060	/* 32bit */
++#define DMILE2A		0x068	/* 64bit */
++
++#define DMILCAP		0x084	/* 32bit */
++#define DMILCTL		0x088	/* 16bit */
++#define DMILSTS		0x08a	/* 16bit */
++
++#define DMICTL1		0x0f0	/* 32bit */
++#define DMICTL2		0x0fc	/* 32bit */
++
++#define DMICC		0x208	/* 32bit */
++
++#define DMIDRCCFG	0xeb4	/* 32bit */
++
++#ifndef __ASSEMBLER__
++static inline void barrier(void) { asm("" ::: "memory"); }
++
++struct ied_header {
++	char signature[10];
++	u32 size;
++	u8 reserved[34];
++} __attribute__ ((packed));
++
++#if CONFIG_NORTHBRIDGE_INTEL_SANDYBRIDGE
++#define PCI_DEVICE_ID_NB 0x0104
++#endif
++#if CONFIG_NORTHBRIDGE_INTEL_IVYBRIDGE
++#define PCI_DEVICE_ID_NB 0x0154
++#endif
++
++#ifdef __SMM__
++void intel_sandybridge_finalize_smm(void);
++#else /* !__SMM__ */
++int bridge_silicon_revision(void);
++void sandybridge_early_initialization(int chipset_type);
++void sandybridge_late_initialization(void);
++
++/* debugging functions */
++void print_pci_devices(void);
++void dump_pci_device(unsigned dev);
++void dump_pci_devices(void);
++void dump_spd_registers(void);
++void dump_mem(unsigned start, unsigned end);
++#endif /* !__SMM__ */
++#endif
++#endif
++#endif
+diff --git a/src/northbridge/intel/sandybridge/udelay.c b/src/northbridge/intel/sandybridge/udelay.c
+new file mode 100644
+index 0000000000..3d8ba96d75
+--- /dev/null
++++ b/src/northbridge/intel/sandybridge/udelay.c
+@@ -0,0 +1,58 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2007-2008 coresystems GmbH
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
++ */
++
++#include <delay.h>
++#include <stdint.h>
++#include <cpu/x86/tsc.h>
++#include <cpu/x86/msr.h>
++
++/**
++ * Intel Core(tm) cpus always run the TSC at the maximum possible CPU clock
++ */
++
++void udelay(u32 us)
++{
++	u32 dword;
++	tsc_t tsc, tsc1, tscd;
++	msr_t msr;
++	u32 fsb = 100, divisor;
++	u32 d;			/* ticks per us */
++	u32 dn = 0x1000000 / 2;	/* how many us before we need to use hi */
++
++	msr = rdmsr(0xce);
++	divisor = (msr.lo >> 8) & 0xff;
++
++	d = fsb * divisor;
++
++	tscd.hi = us / dn;
++	tscd.lo = (us - tscd.hi * dn) * d;
++
++	tsc1 = rdtsc();
++	dword = tsc1.lo + tscd.lo;
++	if ((dword < tsc1.lo) || (dword < tscd.lo)) {
++		tsc1.hi++;
++	}
++	tsc1.lo = dword;
++	tsc1.hi += tscd.hi;
++
++	do {
++		tsc = rdtsc();
++	} while ((tsc.hi < tsc1.hi)
++		 || ((tsc.hi == tsc1.hi) && (tsc.lo <= tsc1.lo)));
++}

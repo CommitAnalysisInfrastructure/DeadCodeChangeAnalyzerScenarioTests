@@ -1,0 +1,3877 @@
+commit 005028e.txt
+Author: Kyösti Mälkki <kyosti.malkki@gmail.com>
+Date:   Thu Jun 19 23:12:15 2014 +0300
+
+    AGESA: Add agesawrapper_post_device()
+    
+    NOTE: The procedure is moved across a collected timestamp
+    TS_WRITE_TABLES, so the delay of SPI erase/write will be accounted
+    for in an earlier entry in cbmem -t output.
+    
+    Change-Id: I0f082e7af1769c8d7d03cdd51fdb5dacbf3402b4
+    Signed-off-by: Kyösti Mälkki <kyosti.malkki@gmail.com>
+    Reviewed-on: http://review.coreboot.org/6132
+    Tested-by: build bot (Jenkins)
+    Reviewed-by: Edward O'Callaghan <eocallaghan@alterapraxis.com>
+
+diff --git a/src/cpu/amd/agesa/Makefile.inc b/src/cpu/amd/agesa/Makefile.inc
+index 1f2966458b..beba040ef4 100644
+--- a/src/cpu/amd/agesa/Makefile.inc
++++ b/src/cpu/amd/agesa/Makefile.inc
+@@ -1,48 +1,49 @@
+ #
+ # This file is part of the coreboot project.
+ #
+ # Copyright (C) 2011 - 2012 Advanced Micro Devices, Inc.
+ #
+ # This program is free software; you can redistribute it and/or modify
+ # it under the terms of the GNU General Public License as published by
+ # the Free Software Foundation; version 2 of the License.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ #
+ # You should have received a copy of the GNU General Public License
+ # along with this program; if not, write to the Free Software
+ # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ #
+ subdirs-$(CONFIG_CPU_AMD_AGESA_FAMILY10) += family10
+ subdirs-$(CONFIG_CPU_AMD_AGESA_FAMILY12) += family12
+ subdirs-$(CONFIG_CPU_AMD_AGESA_FAMILY14) += family14
+ subdirs-$(CONFIG_CPU_AMD_AGESA_FAMILY15) += family15
+ subdirs-$(CONFIG_CPU_AMD_AGESA_FAMILY15_TN) += family15tn
+ subdirs-$(CONFIG_CPU_AMD_AGESA_FAMILY16_KB) += family16kb
+ 
+ romstage-y += s3_resume.c
+ ramstage-y += s3_resume.c
+ ramstage-$(CONFIG_SPI_FLASH) += spi.c
+ 
+ cpu_incs += $(src)/cpu/amd/agesa/cache_as_ram.inc
+ 
+ romstage-y += heapmanager.c
+ ramstage-y += heapmanager.c
++ramstage-y += amd_late_init.c
+ 
+ ifeq ($(CONFIG_HAVE_ACPI_RESUME), y)
+ 
+ $(obj)/coreboot_s3nv.rom: $(obj)/config.h
+ 	echo "    S3 NVRAM   $(CONFIG_S3_DATA_POS) (S3 storage area)"
+ 	# force C locale, so cygwin awk doesn't try to interpret the 0xff below as UTF-8 (or worse)
+ 	printf %d $(CONFIG_S3_DATA_SIZE) | LC_ALL=C awk '{for (i=0; i<$$1; i++) {printf "%c", 255}}' > $@.tmp
+ 	mv $@.tmp $@
+ 
+ cbfs-files-y += s3nv
+ s3nv-file := $(obj)/coreboot_s3nv.rom
+ s3nv-position := $(CONFIG_S3_DATA_POS)
+ s3nv-type := raw
+ 
+ endif # CONFIG_HAVE_ACPI_RESUME == y
+diff --git a/src/cpu/amd/agesa/amd_late_init.c b/src/cpu/amd/agesa/amd_late_init.c
+new file mode 100644
+index 0000000000..e08b159d2f
+--- /dev/null
++++ b/src/cpu/amd/agesa/amd_late_init.c
+@@ -0,0 +1,51 @@
++/*
++ * This file is part of the coreboot project.
++ *
++ * Copyright (C) 2012 Advanced Micro Devices, Inc.
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; version 2 of the License.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
++ */
++
++#include <arch/acpi.h>
++#include <bootstate.h>
++#include <console/console.h>
++
++#include "agesawrapper.h"
++
++void get_bus_conf(void);
++
++static void agesawrapper_post_device(void *unused)
++{
++	u32 status;
++	if (acpi_is_wakeup_s3())
++		return;
++
++	status = agesawrapper_amdinitlate();
++	if (status) {
++		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
++	}
++
++	if (!acpi_s3_resume_allowed())
++		return;
++
++	status = agesawrapper_amdS3Save();
++	if (status) {
++		printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
++	}
++}
++
++BOOT_STATE_INIT_ENTRIES(agesa_bscb) = {
++	BOOT_STATE_INIT_ENTRY(BS_POST_DEVICE, BS_ON_EXIT,
++	                      agesawrapper_post_device, NULL),
++};
+diff --git a/src/mainboard/amd/dinar/agesawrapper.h b/src/mainboard/amd/dinar/agesawrapper.h
+index c42b2b09f7..b8b8db8620 100644
+--- a/src/mainboard/amd/dinar/agesawrapper.h
++++ b/src/mainboard/amd/dinar/agesawrapper.h
+@@ -1,98 +1,99 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /* Define AMD Ontario APPU SSID/SVID */
+ #define AMD_APU_SVID    0x1022
+ #define AMD_APU_SSID    0x1234
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ #define MMIO_NP_BIT         BIT7
+ 
+ /* Hudson-2 ACPI PmIO Space Define */
+ #define SB_ACPI_BASE_ADDRESS              0x0400
+ #define ACPI_MMIO_BASE  0xFED80000
+ #define SB_CFG_BASE     0x000   // DWORD
+ #define GPIO_BASE       0x100   // BYTE
+ #define SMI_BASE        0x200   // DWORD
+ #define PMIO_BASE       0x300   // DWORD
+ #define PMIO2_BASE      0x400   // BYTE
+ #define BIOS_RAM_BASE   0x500   // BYTE
+ #define CMOS_RAM_BASE   0x600   // BYTE
+ #define CMOS_BASE       0x700   // BYTE
+ #define ASF_BASE        0x900   // DWORD
+ #define SMBUS_BASE      0xA00   // DWORD
+ #define WATCHDOG_BASE   0xB00   // ??
+ #define HPET_BASE       0xC00   // DWORD
+ #define IOMUX_BASE      0xD00   // BYTE
+ #define MISC_BASE       0xE00
+ #define SERIAL_DEBUG_BASE  0x1000
+ #define GFX_DAC_BASE       0x1400
+ #define CEC_BASE           0x1800
+ #define XHCI_BASE          0x1C00
+ #define ACPI_SMI_DATA_PORT                0xB1
+ #define R_SB_ACPI_PM1_STATUS              0x00
+ #define R_SB_ACPI_PM1_ENABLE              0x02
+ #define R_SB_ACPI_PM_CONTROL              0x04
+ #define R_SB_ACPI_EVENT_STATUS            0x20
+ #define R_SB_ACPI_EVENT_ENABLE            0x24
+ #define   B_PWR_BTN_STATUS                BIT8
+ #define   B_WAKEUP_STATUS                 BIT15
+ #define   B_SCI_EN                        BIT0
+ #define SB_PM_INDEX_PORT                  0xCD6
+ #define SB_PM_DATA_PORT                   0xCD7
+ #define SB_PMIOA_REG24          0x24        //  AcpiMmioEn
+ #define MmioAddress( BaseAddr, Register ) \
+ 	( (UINTN)BaseAddr + \
+ 	  (UINTN)(Register) \
+ 	)
+ #define Mmio32Ptr( BaseAddr, Register ) \
+ 	( (volatile UINT32 *)MmioAddress( BaseAddr, Register ) )
+ #define Mmio32( BaseAddr, Register ) \
+ 	*Mmio32Ptr( BaseAddr, Register )
+ 
+ enum {
+ 	PICK_DMI,       /* DMI Interface */
+ 	PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+ 	PICK_SRAT,      /* SRAT Table */
+ 	PICK_SLIT,      /* SLIT Table */
+ 	PICK_WHEA_MCE,  /* WHEA MCE table */
+ 	PICK_WHEA_CMC,  /* WHEA CMV table */
+ 	PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ 
+ //void brazos_platform_stage(void);
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ UINT32 agesawrapper_amdreadeventlog (void);
+ UINT32 agesawrapper_amdinitmmio (void);
+ void *agesawrapper_getlateinitptr (int pick);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif
+diff --git a/src/mainboard/amd/dinar/get_bus_conf.c b/src/mainboard/amd/dinar/get_bus_conf.c
+index a59bc437d3..a4d627b8ac 100644
+--- a/src/mainboard/amd/dinar/get_bus_conf.c
++++ b/src/mainboard/amd/dinar/get_bus_conf.c
+@@ -1,156 +1,134 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam15.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_sb700[2];
+ u8 bus_rd890[14];
+ 
+ /*
+  * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+  * You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ /*
+  * HT Chain device num, actually it is unit id base of every ht device in chain,
+  * assume every chain only have 4 ht device at most
+  */
+ u32 hcdnx[] = {
+ 	0x20202020,
+ };
+ 
+ u32 bus_type[256];
+ 
+ u32 sbdn_sb700;
+ u32 sbdn_rd890;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+ 
+ 
+ 
+ void get_bus_conf(void)
+ {
+-	u32 status;
+-
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+ 	printk(BIOS_DEBUG, "Mainboard - Get_bus_conf.c - get_bus_conf - Start.\n");
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-	status = agesawrapper_amdinitlate();
+-	if(status) {
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-	}
+-	printk(BIOS_DEBUG, "Got past agesawrapper_amdinitlate\n");
+ 
+ 	sbdn_sb700 = 0;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(bus_sb700); i++) {
+ 		bus_sb700[i] = 0;
+ 	}
+ 	for (i = 0; i < ARRAY_SIZE(bus_rd890); i++) {
+ 		bus_rd890[i] = 0;
+ 	}
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	bus_rd890[0] = (pci1234x[0] >> 16) & 0xff;
+ 	bus_sb700[0] = bus_rd890[0];
+ 
+ 	/* sb700 */
+ 	dev = dev_find_slot(bus_sb700[0], PCI_DEVFN(sbdn_sb700 + 0x14, 4));
+ 
+ 
+ 
+ 	if (dev) {
+ 		bus_sb700[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sb700[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	/* rd890 */
+ 	for (i = 1; i < ARRAY_SIZE(bus_rd890); i++) {
+ 		dev = dev_find_slot(bus_rd890[0], PCI_DEVFN(sbdn_rd890 + i, 0));
+ 		if (dev) {
+ 			bus_rd890[i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			if(255 != bus_rd890[i]) {
+ 				bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 				bus_isa++;
+ 				bus_type[bus_rd890[i]] = 1; /* PCI bus. */
+ 			}
+ 		}
+ 	}
+ 
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ //	sb_After_Pci_Init();
+ //	sb_Late_Post();
+ #endif
+ 	printk(BIOS_DEBUG, "Mainboard - Get_bus_conf.c - get_bus_conf - End.\n");
+ }
+diff --git a/src/mainboard/amd/inagua/agesawrapper.h b/src/mainboard/amd/inagua/agesawrapper.h
+index 50b6a306d8..6e15a25477 100644
+--- a/src/mainboard/amd/inagua/agesawrapper.h
++++ b/src/mainboard/amd/inagua/agesawrapper.h
+@@ -1,56 +1,57 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /* Define AMD Ontario APPU SSID/SVID */
+ #define AMD_APU_SVID    0x1022
+ #define AMD_APU_SSID    0x1234
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ 
+ enum {
+ 	PICK_DMI,       /* DMI Interface */
+ 	PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+ 	PICK_SRAT,      /* SRAT Table */
+ 	PICK_SLIT,      /* SLIT Table */
+ 	PICK_WHEA_MCE,  /* WHEA MCE table */
+ 	PICK_WHEA_CMC,  /* WHEA CMV table */
+ 	PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ 
+ UINT32 agesawrapper_amdreadeventlog (void);
+ 
+ UINT32 agesawrapper_amdinitcpuio (void);
+ UINT32 agesawrapper_amdinitmmio (void);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ void *agesawrapper_getlateinitptr (int pick);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif
+diff --git a/src/mainboard/amd/inagua/get_bus_conf.c b/src/mainboard/amd/inagua/get_bus_conf.c
+index be28105577..8ab41d102d 100644
+--- a/src/mainboard/amd/inagua/get_bus_conf.c
++++ b/src/mainboard/amd/inagua/get_bus_conf.c
+@@ -1,133 +1,112 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ 
+ /*
+  * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+  * You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+ 
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-	status = agesawrapper_amdinitlate();
+-	if(status) {
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-	}
+-
+ 	sbdn_sb800 = 0;
+ 
+ 	memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	//  bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+ 	bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* sb800 */
+ 	dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sb800[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+ 		if (dev) {
+ 			bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 
+ 	for (j = bus_sb800[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_sb800 = apicid_base;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/amd/olivehill/get_bus_conf.c b/src/mainboard/amd/olivehill/get_bus_conf.c
+index df6ebb7a6d..3addc97cf4 100644
+--- a/src/mainboard/amd/olivehill/get_bus_conf.c
++++ b/src/mainboard/amd/olivehill/get_bus_conf.c
+@@ -1,156 +1,121 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if IS_ENABLED(CONFIG_HUDSON_IMC_FWM)
+ #include "imc.h"
+ #endif
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_yangtze[6];
+ u32 apicid_yangtze;
+ 
+ /*
+  * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+  * You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_yangtze;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 	u32 value;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "hardwaremain".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		}
+-		status = agesawrapper_amdS3Save();
+-		if (status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-		}
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if (status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 	dev = dev_find_slot(0, PCI_DEVFN(0, 0)); /* clear IoapicSbFeatureEn */
+ 	pci_write_config32(dev, 0xF8, 0);
+ 	pci_write_config32(dev, 0xFC, 5); /* TODO: move it to dsdt.asl */
+ 
+ 	/* disable No Snoop */
+ 	dev = dev_find_slot(0, PCI_DEVFN(1, 1));
+ 	value = pci_read_config32(dev, 0x60);
+ 	value &= ~(1 << 11);
+ 	pci_write_config32(dev, 0x60, value);
+ 
+ 	sbdn_yangtze = 0;
+ 
+ 	memset(bus_yangtze, 0, sizeof(bus_yangtze));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	//  bus_yangtze[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+ 	bus_yangtze[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* yangtze */
+ 	dev = dev_find_slot(bus_yangtze[0], PCI_DEVFN(sbdn_yangtze + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_yangtze[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_yangtze[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_yangtze[0], PCI_DEVFN(sbdn_yangtze + 0x14, i));
+ 		if (dev) {
+ 			bus_yangtze[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_yangtze[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_yangtze = apicid_base;
+ 
+ #if IS_ENABLED(CONFIG_HUDSON_IMC_FWM)
+ 	/* AMD AGESA does not enable thermal zone, so we enable it here. */
+ 	enable_imc_thermal_zone();
+ #endif
+ }
+diff --git a/src/mainboard/amd/parmer/get_bus_conf.c b/src/mainboard/amd/parmer/get_bus_conf.c
+index bf76fe2fe7..ce5276fb52 100644
+--- a/src/mainboard/amd/parmer/get_bus_conf.c
++++ b/src/mainboard/amd/parmer/get_bus_conf.c
+@@ -1,145 +1,110 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if IS_ENABLED(CONFIG_HUDSON_IMC_FWM)
+ #include "imc.h"
+ #endif
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_hudson[6];
+ u32 apicid_hudson;
+ 
+ /*
+  * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+  * You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_hudson;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		}
+-		status = agesawrapper_amdS3Save();
+-		if (status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-		}
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if (status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 
+ 	sbdn_hudson = 0;
+ 
+ 	memset(bus_hudson, 0, sizeof(bus_hudson));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	bus_hudson[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* Hudson */
+ 	dev = dev_find_slot(bus_hudson[0], PCI_DEVFN(sbdn_hudson + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_hudson[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_hudson[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_hudson[0], PCI_DEVFN(sbdn_hudson + 0x14, i));
+ 		if (dev) {
+ 			bus_hudson[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_hudson[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_hudson = apicid_base;
+ 
+ #if IS_ENABLED(CONFIG_HUDSON_IMC_FWM)
+ 	/* AMD AGESA does not enable thermal zone, so we enable it here. */
+ 	enable_imc_thermal_zone();
+ #endif
+ }
+diff --git a/src/mainboard/amd/persimmon/get_bus_conf.c b/src/mainboard/amd/persimmon/get_bus_conf.c
+index ac65a1dc06..15b19896ae 100644
+--- a/src/mainboard/amd/persimmon/get_bus_conf.c
++++ b/src/mainboard/amd/persimmon/get_bus_conf.c
+@@ -1,155 +1,121 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #include <arch/ioapic.h>
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+ * and acpi_tables busnum is default.
+ */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ u32 apicver_sb800;
+ 
+ /*
+ * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+ * You may need to preset pci1234 for HTIO board,
+ * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+ */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+-
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;	 /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-/*
+- * This is the call to AmdInitLate.	It is really in the wrong place, conceptually,
+- * but functionally within the coreboot model, this is the best place to make the
+- * call.	The logically correct place to call AmdInitLate is after PCI scan is done,
+- * after the decision about S3 resume is made, and before the system tables are
+- * written into RAM.	The routine that is responsible for writing the tables is
+- * "write_tables", called near the end of "main".	There is no platform
+- * specific entry point between the S3 resume decision point and the call to
+- * "write_tables", and the next platform specific entry points are the calls to
+- * the ACPI table write functions.	The first of ose would seem to be the right
+- * place, but other table write functions, e.g. the PIRQ table write function, are
+- * called before the ACPI tables are written.	This routine is called at the beginning
+- * of each of the write functions called prior to the ACPI write functions, so this
+- * becomes the best place for this call.
+- */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		status = agesawrapper_amdS3Save();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if(status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 	sbdn_sb800 = 0;
+ 
+ 	memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;	/* pci */
+ 
+ //	bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+ 	bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* sb800 */
+ 	dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sb800[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+ 		if (dev) {
+ 			bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 
+ 	for (j = bus_sb800[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 
+ 	/* I/O APICs:    APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 
+ 	/*
+ 	 * By the time this function gets called, the IOAPIC registers
+ 	 * have been written so they can be read to get the correct
+ 	 * APIC ID and Version
+ 	 */
+ 	apicid_sb800 = (io_apic_read(IO_APIC_ADDR, 0x00) >> 24);
+ 	apicver_sb800 = (io_apic_read(IO_APIC_ADDR, 0x01) & 0xFF);
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/amd/south_station/agesawrapper.h b/src/mainboard/amd/south_station/agesawrapper.h
+index 48ed2f13ba..47332c5285 100644
+--- a/src/mainboard/amd/south_station/agesawrapper.h
++++ b/src/mainboard/amd/south_station/agesawrapper.h
+@@ -1,56 +1,57 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /* Define AMD Ontario APPU SSID/SVID */
+ #define AMD_APU_SVID    0x1022
+ #define AMD_APU_SSID    0x1234
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ 
+ enum {
+   PICK_DMI,       /* DMI Interface */
+   PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+   PICK_SRAT,      /* SRAT Table */
+   PICK_SLIT,      /* SLIT Table */
+   PICK_WHEA_MCE,  /* WHEA MCE table */
+   PICK_WHEA_CMC,  /* WHEA CMV table */
+   PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ 
+ UINT32 agesawrapper_amdreadeventlog (void);
+ 
+ UINT32 agesawrapper_amdinitcpuio (void);
+ UINT32 agesawrapper_amdinitmmio (void);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ void *agesawrapper_getlateinitptr (int pick);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif /* _AGESAWRAPPER_H_ */
+diff --git a/src/mainboard/amd/south_station/get_bus_conf.c b/src/mainboard/amd/south_station/get_bus_conf.c
+index df8ce6e514..6a3d23250c 100644
+--- a/src/mainboard/amd/south_station/get_bus_conf.c
++++ b/src/mainboard/amd/south_station/get_bus_conf.c
+@@ -1,136 +1,115 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+ * and acpi_tables busnum is default.
+ */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ 
+ /*
+ * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+ * You may need to preset pci1234 for HTIO board,
+ * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+ */
+ u32 pci1234x[] = {
+   0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+ 
+ void get_bus_conf(void)
+ {
+   u32 apicid_base;
+-  u32 status;
+ 
+   device_t dev;
+   int i, j;
+ 
+   if (get_bus_conf_done == 1)
+     return;   /* do it only once */
+ 
+   get_bus_conf_done = 1;
+ 
+-/*
+- * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+- * but functionally within the coreboot model, this is the best place to make the
+- * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+- * after the decision about S3 resume is made, and before the system tables are
+- * written into RAM.  The routine that is responsible for writing the tables is
+- * "write_tables", called near the end of "main".  There is no platform
+- * specific entry point between the S3 resume decision point and the call to
+- * "write_tables", and the next platform specific entry points are the calls to
+- * the ACPI table write functions.  The first of ose would seem to be the right
+- * place, but other table write functions, e.g. the PIRQ table write function, are
+- * called before the ACPI tables are written.  This routine is called at the beginning
+- * of each of the write functions called prior to the ACPI write functions, so this
+- * becomes the best place for this call.
+- */
+-  status = agesawrapper_amdinitlate();
+-  if(status) {
+-    printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-  }
+-
+   sbdn_sb800 = 0;
+ 
+   memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+   for (i = 0; i < 256; i++) {
+     bus_type[i] = 0; /* default ISA bus. */
+   }
+ 
+ 
+   bus_type[0] = 1;  /* pci */
+ 
+ //  bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+   bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+   /* sb800 */
+   dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 
+ 
+   if (dev) {
+     bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+     bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+     bus_isa++;
+     for (j = bus_sb800[1]; j < bus_isa; j++)
+       bus_type[j] = 1;
+   }
+ 
+   for (i = 0; i < 4; i++) {
+     dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+     if (dev) {
+       bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+       bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+       bus_isa++;
+     }
+   }
+   for (j = bus_sb800[2]; j < bus_isa; j++)
+     bus_type[j] = 1;
+ 
+ 
+   /* I/O APICs:   APIC ID Version State   Address */
+   bus_isa = 10;
+   apicid_base = CONFIG_MAX_CPUS;
+   apicid_sb800 = apicid_base;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/amd/thatcher/get_bus_conf.c b/src/mainboard/amd/thatcher/get_bus_conf.c
+index bf76fe2fe7..ce5276fb52 100644
+--- a/src/mainboard/amd/thatcher/get_bus_conf.c
++++ b/src/mainboard/amd/thatcher/get_bus_conf.c
+@@ -1,145 +1,110 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if IS_ENABLED(CONFIG_HUDSON_IMC_FWM)
+ #include "imc.h"
+ #endif
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_hudson[6];
+ u32 apicid_hudson;
+ 
+ /*
+  * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+  * You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_hudson;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		}
+-		status = agesawrapper_amdS3Save();
+-		if (status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-		}
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if (status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 
+ 	sbdn_hudson = 0;
+ 
+ 	memset(bus_hudson, 0, sizeof(bus_hudson));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	bus_hudson[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* Hudson */
+ 	dev = dev_find_slot(bus_hudson[0], PCI_DEVFN(sbdn_hudson + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_hudson[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_hudson[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_hudson[0], PCI_DEVFN(sbdn_hudson + 0x14, i));
+ 		if (dev) {
+ 			bus_hudson[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_hudson[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_hudson = apicid_base;
+ 
+ #if IS_ENABLED(CONFIG_HUDSON_IMC_FWM)
+ 	/* AMD AGESA does not enable thermal zone, so we enable it here. */
+ 	enable_imc_thermal_zone();
+ #endif
+ }
+diff --git a/src/mainboard/amd/torpedo/agesawrapper.h b/src/mainboard/amd/torpedo/agesawrapper.h
+index 9883bd1b1d..5947b6b504 100644
+--- a/src/mainboard/amd/torpedo/agesawrapper.h
++++ b/src/mainboard/amd/torpedo/agesawrapper.h
+@@ -1,98 +1,99 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /* Define AMD Ontario APPU SSID/SVID */
+ #define AMD_APU_SVID    0x1022
+ #define AMD_APU_SSID    0x1234
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ 
+ /* Hudson-2 ACPI PmIO Space Define */
+ #define SB_ACPI_BASE_ADDRESS              0x0400
+ #define ACPI_MMIO_BASE  0xFED80000
+ #define SB_CFG_BASE     0x000   // DWORD
+ #define GPIO_BASE       0x100   // BYTE
+ #define SMI_BASE        0x200   // DWORD
+ #define PMIO_BASE       0x300   // DWORD
+ #define PMIO2_BASE      0x400   // BYTE
+ #define BIOS_RAM_BASE   0x500   // BYTE
+ #define CMOS_RAM_BASE   0x600   // BYTE
+ #define CMOS_BASE       0x700   // BYTE
+ #define ASF_BASE        0x900   // DWORD
+ #define SMBUS_BASE      0xA00   // DWORD
+ #define WATCHDOG_BASE   0xB00   // ??
+ #define HPET_BASE       0xC00   // DWORD
+ #define IOMUX_BASE      0xD00   // BYTE
+ #define MISC_BASE       0xE00
+ #define SERIAL_DEBUG_BASE  0x1000
+ #define GFX_DAC_BASE       0x1400
+ #define CEC_BASE           0x1800
+ #define XHCI_BASE          0x1C00
+ #define ACPI_SMI_DATA_PORT                0xB1
+ #define R_SB_ACPI_PM1_STATUS              0x00
+ #define R_SB_ACPI_PM1_ENABLE              0x02
+ #define R_SB_ACPI_PM_CONTROL              0x04
+ #define R_SB_ACPI_EVENT_STATUS            0x20
+ #define R_SB_ACPI_EVENT_ENABLE            0x24
+ #define   B_PWR_BTN_STATUS                BIT8
+ #define   B_WAKEUP_STATUS                 BIT15
+ #define   B_SCI_EN                        BIT0
+ #define SB_PM_INDEX_PORT                  0xCD6
+ #define SB_PM_DATA_PORT                   0xCD7
+ #define SB_PMIOA_REG24          0x24        //  AcpiMmioEn
+ #define MmioAddress( BaseAddr, Register ) \
+   ( (UINTN)BaseAddr + \
+     (UINTN)(Register) \
+   )
+ #define Mmio32Ptr( BaseAddr, Register ) \
+   ( (volatile UINT32 *)MmioAddress( BaseAddr, Register ) )
+ #define Mmio32( BaseAddr, Register ) \
+   *Mmio32Ptr( BaseAddr, Register )
+ 
+ enum {
+   PICK_DMI,       /* DMI Interface */
+   PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+   PICK_SRAT,      /* SRAT Table */
+   PICK_SLIT,      /* SLIT Table */
+   PICK_WHEA_MCE,  /* WHEA MCE table */
+   PICK_WHEA_CMC,  /* WHEA CMV table */
+   PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ 
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ 
+ UINT32 agesawrapper_amdreadeventlog (void);
+ UINT32 agesawrapper_amdinitcpuio (void);
+ UINT32 agesawrapper_amdinitmmio (void);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ void *agesawrapper_getlateinitptr (int pick);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif
+diff --git a/src/mainboard/amd/torpedo/get_bus_conf.c b/src/mainboard/amd/torpedo/get_bus_conf.c
+index 2b4e9fa73a..5404941c10 100644
+--- a/src/mainboard/amd/torpedo/get_bus_conf.c
++++ b/src/mainboard/amd/torpedo/get_bus_conf.c
+@@ -1,136 +1,113 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam12.h>
+ #include "sb_cimx.h"
+ #include "agesawrapper.h"
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+ * and acpi_tables busnum is default.
+ */
+ u8 bus_isa;
+ u8 bus_sb900[6];
+ 
+ /*
+ * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+ * You may need to preset pci1234 for HTIO board,
+ * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+ */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ /*
+ * HT Chain device num, actually it is unit id base of every ht device in chain,
+ * assume every chain only have 4 ht device at most
+ */
+ u32 hcdnx[] = {
+ 	0x20202020,
+ };
+ 
+ u32 bus_type[256];
+ 
+ u32 sbdn_sb900;
+ 
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+ void get_bus_conf(void)
+ {
+-	u32 status;
+-
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;		/* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+ 	printk(BIOS_DEBUG, "Mainboard - %s - %s - Start.\n", __FILE__, __func__);
+-/*
+- * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+- * but functionally within the coreboot model, this is the best place to make the
+- * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+- * after the decision about S3 resume is made, and before the system tables are
+- * written into RAM.  The routine that is responsible for writing the tables is
+- * "write_tables", called near the end of "main".  There is no platform
+- * specific entry point between the S3 resume decision point and the call to
+- * "write_tables", and the next platform specific entry points are the calls to
+- * the ACPI table write functions.  The first of ose would seem to be the right
+- * place, but other table write functions, e.g. the PIRQ table write function, are
+- * called before the ACPI tables are written.  This routine is called at the beginning
+- * of each of the write functions called prior to the ACPI write functions, so this
+- * becomes the best place for this call.
+- */
+-	printk(BIOS_DEBUG, "agesawrapper_amdinitlate ");
+-	status = agesawrapper_amdinitlate();
+-	if (status)
+-		printk(BIOS_DEBUG, "error level: %x \n", status);
+-	else
+-		printk(BIOS_DEBUG, "passed.\n");
+ 
+ 	sbdn_sb900 = 0;
+ 
+ 	memset(bus_sb900, 0, sizeof(bus_sb900));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0;	/* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;	/* pci */
+ 
+ 	bus_sb900[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* sb900 */
+ 	dev = dev_find_slot(bus_sb900[0], PCI_DEVFN(sbdn_sb900 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sb900[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sb900[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sb900[0],
+ 				  PCI_DEVFN(sbdn_sb900 + 0x14, i));
+ 		if (dev) {
+ 			bus_sb900[2 + i] =
+ 			    pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_sb900[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 
+ 	sb_Late_Post();
+ 	printk(BIOS_DEBUG, "Mainboard - %s - %s - End.\n", __FILE__, __func__);
+ }
+diff --git a/src/mainboard/amd/union_station/agesawrapper.h b/src/mainboard/amd/union_station/agesawrapper.h
+index 48ed2f13ba..47332c5285 100644
+--- a/src/mainboard/amd/union_station/agesawrapper.h
++++ b/src/mainboard/amd/union_station/agesawrapper.h
+@@ -1,56 +1,57 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /* Define AMD Ontario APPU SSID/SVID */
+ #define AMD_APU_SVID    0x1022
+ #define AMD_APU_SSID    0x1234
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ 
+ enum {
+   PICK_DMI,       /* DMI Interface */
+   PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+   PICK_SRAT,      /* SRAT Table */
+   PICK_SLIT,      /* SLIT Table */
+   PICK_WHEA_MCE,  /* WHEA MCE table */
+   PICK_WHEA_CMC,  /* WHEA CMV table */
+   PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ 
+ UINT32 agesawrapper_amdreadeventlog (void);
+ 
+ UINT32 agesawrapper_amdinitcpuio (void);
+ UINT32 agesawrapper_amdinitmmio (void);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ void *agesawrapper_getlateinitptr (int pick);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif /* _AGESAWRAPPER_H_ */
+diff --git a/src/mainboard/amd/union_station/get_bus_conf.c b/src/mainboard/amd/union_station/get_bus_conf.c
+index df8ce6e514..6a3d23250c 100644
+--- a/src/mainboard/amd/union_station/get_bus_conf.c
++++ b/src/mainboard/amd/union_station/get_bus_conf.c
+@@ -1,136 +1,115 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+ * and acpi_tables busnum is default.
+ */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ 
+ /*
+ * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+ * You may need to preset pci1234 for HTIO board,
+ * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+ */
+ u32 pci1234x[] = {
+   0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+ 
+ void get_bus_conf(void)
+ {
+   u32 apicid_base;
+-  u32 status;
+ 
+   device_t dev;
+   int i, j;
+ 
+   if (get_bus_conf_done == 1)
+     return;   /* do it only once */
+ 
+   get_bus_conf_done = 1;
+ 
+-/*
+- * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+- * but functionally within the coreboot model, this is the best place to make the
+- * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+- * after the decision about S3 resume is made, and before the system tables are
+- * written into RAM.  The routine that is responsible for writing the tables is
+- * "write_tables", called near the end of "main".  There is no platform
+- * specific entry point between the S3 resume decision point and the call to
+- * "write_tables", and the next platform specific entry points are the calls to
+- * the ACPI table write functions.  The first of ose would seem to be the right
+- * place, but other table write functions, e.g. the PIRQ table write function, are
+- * called before the ACPI tables are written.  This routine is called at the beginning
+- * of each of the write functions called prior to the ACPI write functions, so this
+- * becomes the best place for this call.
+- */
+-  status = agesawrapper_amdinitlate();
+-  if(status) {
+-    printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-  }
+-
+   sbdn_sb800 = 0;
+ 
+   memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+   for (i = 0; i < 256; i++) {
+     bus_type[i] = 0; /* default ISA bus. */
+   }
+ 
+ 
+   bus_type[0] = 1;  /* pci */
+ 
+ //  bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+   bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+   /* sb800 */
+   dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 
+ 
+   if (dev) {
+     bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+     bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+     bus_isa++;
+     for (j = bus_sb800[1]; j < bus_isa; j++)
+       bus_type[j] = 1;
+   }
+ 
+   for (i = 0; i < 4; i++) {
+     dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+     if (dev) {
+       bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+       bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+       bus_isa++;
+     }
+   }
+   for (j = bus_sb800[2]; j < bus_isa; j++)
+     bus_type[j] = 1;
+ 
+ 
+   /* I/O APICs:   APIC ID Version State   Address */
+   bus_isa = 10;
+   apicid_base = CONFIG_MAX_CPUS;
+   apicid_sb800 = apicid_base;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/asrock/e350m1/agesawrapper.h b/src/mainboard/asrock/e350m1/agesawrapper.h
+index 10158f6454..b503559207 100644
+--- a/src/mainboard/asrock/e350m1/agesawrapper.h
++++ b/src/mainboard/asrock/e350m1/agesawrapper.h
+@@ -1,87 +1,88 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *                             M O D U L E S    U S E D
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /*----------------------------------------------------------------------------------------
+  *                   D E F I N I T I O N S    A N D    M A C R O S
+  *----------------------------------------------------------------------------------------
+  */
+ /* Define AMD Ontario APPU SSID/SVID */
+ #define AMD_APU_SVID    0x1022
+ #define AMD_APU_SSID    0x1234
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ 
+ 
+ enum {
+   PICK_DMI,       /* DMI Interface */
+   PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+   PICK_SRAT,      /* SRAT Table */
+   PICK_SLIT,      /* SLIT Table */
+   PICK_WHEA_MCE,  /* WHEA MCE table */
+   PICK_WHEA_CMC,  /* WHEA CMV table */
+   PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ 
+ 
+ /*----------------------------------------------------------------------------------------
+  *                  T Y P E D E F S     A N D     S T R U C T U  R E S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *           P R O T O T Y P E S     O F     L O C A L     F U  N C T I O N S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *                          E X P O R T E D    F U N C T I O N S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*---------------------------------------------------------------------------------------
+  *                          L O C A L    F U N C T I O N S
+  *---------------------------------------------------------------------------------------
+  */
+ 
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ UINT32 agesawrapper_amdreadeventlog (void);
+ UINT32 agesawrapper_amdinitmmio (void);
+ UINT32 agesawrapper_amdinitcpuio (void);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ void *agesawrapper_getlateinitptr (int pick);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif
+diff --git a/src/mainboard/asrock/e350m1/get_bus_conf.c b/src/mainboard/asrock/e350m1/get_bus_conf.c
+index df8ce6e514..6a3d23250c 100644
+--- a/src/mainboard/asrock/e350m1/get_bus_conf.c
++++ b/src/mainboard/asrock/e350m1/get_bus_conf.c
+@@ -1,136 +1,115 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+ * and acpi_tables busnum is default.
+ */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ 
+ /*
+ * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+ * You may need to preset pci1234 for HTIO board,
+ * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+ */
+ u32 pci1234x[] = {
+   0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+ 
+ void get_bus_conf(void)
+ {
+   u32 apicid_base;
+-  u32 status;
+ 
+   device_t dev;
+   int i, j;
+ 
+   if (get_bus_conf_done == 1)
+     return;   /* do it only once */
+ 
+   get_bus_conf_done = 1;
+ 
+-/*
+- * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+- * but functionally within the coreboot model, this is the best place to make the
+- * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+- * after the decision about S3 resume is made, and before the system tables are
+- * written into RAM.  The routine that is responsible for writing the tables is
+- * "write_tables", called near the end of "main".  There is no platform
+- * specific entry point between the S3 resume decision point and the call to
+- * "write_tables", and the next platform specific entry points are the calls to
+- * the ACPI table write functions.  The first of ose would seem to be the right
+- * place, but other table write functions, e.g. the PIRQ table write function, are
+- * called before the ACPI tables are written.  This routine is called at the beginning
+- * of each of the write functions called prior to the ACPI write functions, so this
+- * becomes the best place for this call.
+- */
+-  status = agesawrapper_amdinitlate();
+-  if(status) {
+-    printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-  }
+-
+   sbdn_sb800 = 0;
+ 
+   memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+   for (i = 0; i < 256; i++) {
+     bus_type[i] = 0; /* default ISA bus. */
+   }
+ 
+ 
+   bus_type[0] = 1;  /* pci */
+ 
+ //  bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+   bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+   /* sb800 */
+   dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 
+ 
+   if (dev) {
+     bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+     bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+     bus_isa++;
+     for (j = bus_sb800[1]; j < bus_isa; j++)
+       bus_type[j] = 1;
+   }
+ 
+   for (i = 0; i < 4; i++) {
+     dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+     if (dev) {
+       bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+       bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+       bus_isa++;
+     }
+   }
+   for (j = bus_sb800[2]; j < bus_isa; j++)
+     bus_type[j] = 1;
+ 
+ 
+   /* I/O APICs:   APIC ID Version State   Address */
+   bus_isa = 10;
+   apicid_base = CONFIG_MAX_CPUS;
+   apicid_sb800 = apicid_base;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/asrock/imb-a180/get_bus_conf.c b/src/mainboard/asrock/imb-a180/get_bus_conf.c
+index a380872566..226d57de91 100644
+--- a/src/mainboard/asrock/imb-a180/get_bus_conf.c
++++ b/src/mainboard/asrock/imb-a180/get_bus_conf.c
+@@ -1,148 +1,113 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_yangtze[6];
+ u32 apicid_yangtze;
+ 
+ /*
+  * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+  * You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_yangtze;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 	u32 value;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "hardwaremain".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		}
+-		status = agesawrapper_amdS3Save();
+-		if (status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-		}
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if (status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 	dev = dev_find_slot(0, PCI_DEVFN(0, 0)); /* clear IoapicSbFeatureEn */
+ 	pci_write_config32(dev, 0xF8, 0);
+ 	pci_write_config32(dev, 0xFC, 5); /* TODO: move it to dsdt.asl */
+ 
+ 	/* disable No Snoop */
+ 	dev = dev_find_slot(0, PCI_DEVFN(1, 1));
+ 	value = pci_read_config32(dev, 0x60);
+ 	value &= ~(1 << 11);
+ 	pci_write_config32(dev, 0x60, value);
+ 
+ 	sbdn_yangtze = 0;
+ 
+ 	memset(bus_yangtze, 0, sizeof(bus_yangtze));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	//  bus_yangtze[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+ 	bus_yangtze[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* yangtze */
+ 	dev = dev_find_slot(bus_yangtze[0], PCI_DEVFN(sbdn_yangtze + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_yangtze[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_yangtze[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_yangtze[0], PCI_DEVFN(sbdn_yangtze + 0x14, i));
+ 		if (dev) {
+ 			bus_yangtze[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_yangtze[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_yangtze = apicid_base;
+ }
+diff --git a/src/mainboard/asus/f2a85-m/get_bus_conf.c b/src/mainboard/asus/f2a85-m/get_bus_conf.c
+index b915d76002..5d5922ba86 100644
+--- a/src/mainboard/asus/f2a85-m/get_bus_conf.c
++++ b/src/mainboard/asus/f2a85-m/get_bus_conf.c
+@@ -1,138 +1,103 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include "agesawrapper.h"
+ 
+ #include <console/console.h>
+ #include <cpu/amd/amdfam15.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_hudson[6];
+ u32 apicid_hudson;
+ 
+ /*
+  * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+  * You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_hudson;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		}
+-		status = agesawrapper_amdS3Save();
+-		if (status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-		}
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if (status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 
+ 	sbdn_hudson = 0;
+ 
+ 	memset(bus_hudson, 0, sizeof(bus_hudson));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	bus_hudson[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* Hudson */
+ 	dev = dev_find_slot(bus_hudson[0], PCI_DEVFN(sbdn_hudson + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_hudson[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_hudson[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_hudson[0], PCI_DEVFN(sbdn_hudson + 0x14, i));
+ 		if (dev) {
+ 			bus_hudson[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_hudson[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_hudson = apicid_base;
+ }
+diff --git a/src/mainboard/gizmosphere/gizmo/get_bus_conf.c b/src/mainboard/gizmosphere/gizmo/get_bus_conf.c
+index 89118aab64..3b43d9d427 100755
+--- a/src/mainboard/gizmosphere/gizmo/get_bus_conf.c
++++ b/src/mainboard/gizmosphere/gizmo/get_bus_conf.c
+@@ -1,147 +1,113 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  * Copyright (C) 2013 Sage Electronic Engineering, LLC
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+ * and acpi_tables busnum is default.
+ */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ 
+ /*
+ * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+ * You may need to preset pci1234 for HTIO board,
+ * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+ */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+-
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;	 /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-/*
+- * This is the call to AmdInitLate.	It is really in the wrong place, conceptually,
+- * but functionally within the coreboot model, this is the best place to make the
+- * call.	The logically correct place to call AmdInitLate is after PCI scan is done,
+- * after the decision about S3 resume is made, and before the system tables are
+- * written into RAM.	The routine that is responsible for writing the tables is
+- * "write_tables", called near the end of "hardwaremain".	There is no platform
+- * specific entry point between the S3 resume decision point and the call to
+- * "write_tables", and the next platform specific entry points are the calls to
+- * the ACPI table write functions.	The first of ose would seem to be the right
+- * place, but other table write functions, e.g. the PIRQ table write function, are
+- * called before the ACPI tables are written.	This routine is called at the beginning
+- * of each of the write functions called prior to the ACPI write functions, so this
+- * becomes the best place for this call.
+- */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		status = agesawrapper_amdS3Save();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if(status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 	sbdn_sb800 = 0;
+ 
+ 	memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;	/* pci */
+ 
+ //	bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+ 	bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* sb800 */
+ 	dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sb800[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+ 		if (dev) {
+ 			bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 
+ 	for (j = bus_sb800[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 
+ 	/* I/O APICs:    APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_sb800 = apicid_base;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/hp/pavilion_m6_1035dx/get_bus_conf.c b/src/mainboard/hp/pavilion_m6_1035dx/get_bus_conf.c
+index 79a5380f20..34afc171cc 100644
+--- a/src/mainboard/hp/pavilion_m6_1035dx/get_bus_conf.c
++++ b/src/mainboard/hp/pavilion_m6_1035dx/get_bus_conf.c
+@@ -1,144 +1,109 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include "agesawrapper.h"
+ 
+ #include <console/console.h>
+ #include <cpu/amd/amdfam15.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #include <southbridge/amd/agesa/hudson/imc.h>
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_hudson[6];
+ u32 apicid_hudson;
+ 
+ /*
+  * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+  * You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_hudson;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		}
+-		status = agesawrapper_amdS3Save();
+-		if (status) {
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-		}
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if (status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 
+ 	sbdn_hudson = 0;
+ 
+ 	memset(bus_hudson, 0, sizeof(bus_hudson));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	bus_hudson[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* Hudson */
+ 	dev = dev_find_slot(bus_hudson[0], PCI_DEVFN(sbdn_hudson + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_hudson[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_hudson[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_hudson[0], PCI_DEVFN(sbdn_hudson + 0x14, i));
+ 		if (dev) {
+ 			bus_hudson[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_hudson[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_hudson = apicid_base;
+ 
+ #if IS_ENABLED(CONFIG_HUDSON_IMC_FWM)
+ 	/* AMD AGESA does not enable thermal zone, so we enable it here. */
+ 	enable_imc_thermal_zone();
+ #endif
+ }
+diff --git a/src/mainboard/jetway/nf81-t56n-lf/get_bus_conf.c b/src/mainboard/jetway/nf81-t56n-lf/get_bus_conf.c
+index 688f9dd929..69a86ab0e8 100644
+--- a/src/mainboard/jetway/nf81-t56n-lf/get_bus_conf.c
++++ b/src/mainboard/jetway/nf81-t56n-lf/get_bus_conf.c
+@@ -1,162 +1,125 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include "agesawrapper.h"
+ 
+ #include <arch/ioapic.h>
+ #include <console/console.h>
+ #include <cpu/amd/amdfam14.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <string.h>
+ 
+ #include <southbridge/amd/cimx/sb800/sb_cimx.h>
+ 
+ 
+ /**
+  * Global variables for mainboard layouts. These are shared by irqtable,
+  * mptable and acpi_tables where busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ u32 apicver_sb800;
+ 
+ /**
+  * Here you only need to set value in pci1234 for HT-IO that could be
+  * installed or not. You may need to preset pci1234 for HTIO board,
+  * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+  */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif /* CONFIG_HAVE_ACPI_RESUME */
+-
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	/* Be sure func is called exactly once */
+ 	if (get_bus_conf_done == 1)
+ 		return;
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate. It is really in the wrong place,
+-	 * conceptually, but functionally within the coreboot model, this is the
+-	 * best place to make the call. The logically correct place to call
+-	 * AmdInitLate is after PCI scan is done, after the decision about S3
+-	 * resume is made, and before the system tables are written into RAM. The
+-	 * routine that is
+-	 * responsible for writing the tables is "write_tables", called near the
+-	 * end of "main". There is no platform specific entry point between the S3
+-	 * resume decision point and the call to "write_tables", and the next
+-	 * platform specific entry points are the calls to the ACPI table write
+-	 * functions. The first of ose would seem to be the right place, but other
+-	 * table write
+-	 * functions, e.g. the PIRQ table write function, are called before the
+-	 * ACPI tables are written. This routine is called at the beginning of each
+-	 * of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		status = agesawrapper_amdS3Save();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if(status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif /* CONFIG_HAVE_ACPI_RESUME */
+ 
+ 	sbdn_sb800 = 0;
+ 
+ 	memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;	/* pci */
+ 
+ //	bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+ 	bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* sb800 */
+ 	dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sb800[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+ 		if (dev) {
+ 			bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 
+ 	for (j = bus_sb800[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 
+ 	/* I/O APICs:    APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 
+ 	/*
+ 	 * By the time this function gets called, the IOAPIC registers
+ 	 * have been written so they can be read to get the correct
+ 	 * APIC ID and Version
+ 	 */
+ 	apicid_sb800 = (io_apic_read(IO_APIC_ADDR, 0x00) >> 24);
+ 	apicver_sb800 = (io_apic_read(IO_APIC_ADDR, 0x01) & 0xFF);
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif /* CONFIG_AMD_SB_CIMX */
+ }
+diff --git a/src/mainboard/lippert/frontrunner-af/get_bus_conf.c b/src/mainboard/lippert/frontrunner-af/get_bus_conf.c
+index 258d895736..1e7fca4e5d 100644
+--- a/src/mainboard/lippert/frontrunner-af/get_bus_conf.c
++++ b/src/mainboard/lippert/frontrunner-af/get_bus_conf.c
+@@ -1,146 +1,112 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+ * and acpi_tables busnum is default.
+ */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ 
+ /*
+ * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+ * You may need to preset pci1234 for HTIO board,
+ * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+ */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+-
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;	 /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-/*
+- * This is the call to AmdInitLate.	It is really in the wrong place, conceptually,
+- * but functionally within the coreboot model, this is the best place to make the
+- * call.	The logically correct place to call AmdInitLate is after PCI scan is done,
+- * after the decision about S3 resume is made, and before the system tables are
+- * written into RAM.	The routine that is responsible for writing the tables is
+- * "write_tables", called near the end of "main".	There is no platform
+- * specific entry point between the S3 resume decision point and the call to
+- * "write_tables", and the next platform specific entry points are the calls to
+- * the ACPI table write functions.	The first of ose would seem to be the right
+- * place, but other table write functions, e.g. the PIRQ table write function, are
+- * called before the ACPI tables are written.	This routine is called at the beginning
+- * of each of the write functions called prior to the ACPI write functions, so this
+- * becomes the best place for this call.
+- */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		status = agesawrapper_amdS3Save();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if(status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 	sbdn_sb800 = 0;
+ 
+ 	memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;	/* pci */
+ 
+ //	bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+ 	bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* sb800 */
+ 	dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sb800[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+ 		if (dev) {
+ 			bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 
+ 	for (j = bus_sb800[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 
+ 	/* I/O APICs:    APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_sb800 = apicid_base;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/lippert/toucan-af/get_bus_conf.c b/src/mainboard/lippert/toucan-af/get_bus_conf.c
+index 258d895736..1e7fca4e5d 100644
+--- a/src/mainboard/lippert/toucan-af/get_bus_conf.c
++++ b/src/mainboard/lippert/toucan-af/get_bus_conf.c
+@@ -1,146 +1,112 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include <cpu/amd/amdfam14.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+ * and acpi_tables busnum is default.
+ */
+ u8 bus_isa;
+ u8 bus_sb800[6];
+ u32 apicid_sb800;
+ 
+ /*
+ * Here you only need to set value in pci1234 for HT-IO that could be installed or not
+ * You may need to preset pci1234 for HTIO board,
+ * please refer to src/northbridge/amd/amdk8/get_sblk_pci1234.c for detail
+ */
+ u32 pci1234x[] = {
+ 	0x0000ff0,
+ };
+ 
+ u32 bus_type[256];
+ u32 sbdn_sb800;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+-#if CONFIG_HAVE_ACPI_RESUME
+-extern u8 acpi_slp_type;
+-#endif
+-
+ void get_bus_conf(void)
+ {
+ 	u32 apicid_base;
+-	u32 status;
+ 
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;	 /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-/*
+- * This is the call to AmdInitLate.	It is really in the wrong place, conceptually,
+- * but functionally within the coreboot model, this is the best place to make the
+- * call.	The logically correct place to call AmdInitLate is after PCI scan is done,
+- * after the decision about S3 resume is made, and before the system tables are
+- * written into RAM.	The routine that is responsible for writing the tables is
+- * "write_tables", called near the end of "main".	There is no platform
+- * specific entry point between the S3 resume decision point and the call to
+- * "write_tables", and the next platform specific entry points are the calls to
+- * the ACPI table write functions.	The first of ose would seem to be the right
+- * place, but other table write functions, e.g. the PIRQ table write function, are
+- * called before the ACPI tables are written.	This routine is called at the beginning
+- * of each of the write functions called prior to the ACPI write functions, so this
+- * becomes the best place for this call.
+- */
+-#if CONFIG_HAVE_ACPI_RESUME
+-	if (acpi_slp_type != 3) {
+-		status = agesawrapper_amdinitlate();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-		status = agesawrapper_amdS3Save();
+-		if(status)
+-			printk(BIOS_DEBUG, "agesawrapper_amds3save failed: %x \n", status);
+-	}
+-#else
+-	status = agesawrapper_amdinitlate();
+-	if(status)
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-#endif
+ 	sbdn_sb800 = 0;
+ 
+ 	memset(bus_sb800, 0, sizeof(bus_sb800));
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;	/* pci */
+ 
+ //	bus_sb800[0] = (sysconf.pci1234[0] >> 16) & 0xff;
+ 	bus_sb800[0] = (pci1234x[0] >> 16) & 0xff;
+ 
+ 	/* sb800 */
+ 	dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sb800[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sb800[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sb800[0], PCI_DEVFN(sbdn_sb800 + 0x14, i));
+ 		if (dev) {
+ 			bus_sb800[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 
+ 	for (j = bus_sb800[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ 
+ 
+ 	/* I/O APICs:    APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 	apicid_base = CONFIG_MAX_CPUS;
+ 	apicid_sb800 = apicid_base;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/supermicro/h8qgi/agesawrapper.h b/src/mainboard/supermicro/h8qgi/agesawrapper.h
+index 4f5a6934b0..51e438d497 100644
+--- a/src/mainboard/supermicro/h8qgi/agesawrapper.h
++++ b/src/mainboard/supermicro/h8qgi/agesawrapper.h
+@@ -1,82 +1,83 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *                             M O D U L E S    U S E D
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /*----------------------------------------------------------------------------------------
+  *                   D E F I N I T I O N S    A N D    M A C R O S
+  *----------------------------------------------------------------------------------------
+  */
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ 
+ enum {
+ 	PICK_DMI,       /* DMI Interface */
+ 	PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+ 	PICK_SRAT,      /* SRAT Table */
+ 	PICK_SLIT,      /* SLIT Table */
+ 	PICK_WHEA_MCE,  /* WHEA MCE table */
+ 	PICK_WHEA_CMC,  /* WHEA CMV table */
+ 	PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ 
+ 
+ /*----------------------------------------------------------------------------------------
+  *                  T Y P E D E F S     A N D     S T R U C T U  R E S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *           P R O T O T Y P E S     O F     L O C A L     F U  N C T I O N S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *                          E X P O R T E D    F U N C T I O N S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*---------------------------------------------------------------------------------------
+  *                          L O C A L    F U N C T I O N S
+  *---------------------------------------------------------------------------------------
+  */
+ 
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ UINT32 agesawrapper_amdreadeventlog (UINT8 HeapStatus);
+ UINT32 agesawrapper_amdinitmmio (void);
+ void *agesawrapper_getlateinitptr (int pick);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif
+diff --git a/src/mainboard/supermicro/h8qgi/get_bus_conf.c b/src/mainboard/supermicro/h8qgi/get_bus_conf.c
+index 25dc2a2b38..345c75dae8 100644
+--- a/src/mainboard/supermicro/h8qgi/get_bus_conf.c
++++ b/src/mainboard/supermicro/h8qgi/get_bus_conf.c
+@@ -1,145 +1,123 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 - 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include "agesawrapper.h"
+ #include <cpu/amd/amdfam10_sysconf.h>
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_sp5100[2];
+ u8 bus_sr5650[14];
+ 
+ 
+ u32 bus_type[256];
+ 
+ u32 sbdn_sr5650;
+ u32 sbdn_sp5100;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+ 
+ void get_bus_conf(void)
+ {
+-	u32 status;
+-
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-	status = agesawrapper_amdinitlate();
+-	if(status) {
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-	}
+-
+ 	sbdn_sp5100 = 0;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(bus_sp5100); i++) {
+ 		bus_sp5100[i] = 0;
+ 	}
+ 	for (i = 0; i < ARRAY_SIZE(bus_sr5650); i++) {
+ 		bus_sr5650[i] = 0;
+ 	}
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	bus_sr5650[0] = 0;
+ 	bus_sp5100[0] = bus_sr5650[0];
+ 
+ 	/* sp5100 */
+ 	dev = dev_find_slot(bus_sp5100[0], PCI_DEVFN(sbdn_sp5100 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sp5100[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sp5100[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	/* sr5650 */
+ 	for (i = 1; i < ARRAY_SIZE(bus_sr5650); i++) {
+ 		dev = dev_find_slot(bus_sr5650[0], PCI_DEVFN(sbdn_sr5650 + i, 0));
+ 		if (dev) {
+ 			bus_sr5650[i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			if(255 != bus_sr5650[i]) {
+ 				bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 				bus_isa++;
+ 				bus_type[bus_sr5650[i]] = 1; /* PCI bus. */
+ 			}
+ 		}
+ 	}
+ 
+ /*
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sp5100[0], PCI_DEVFN(sbdn_sp5100 + 0x14, i));
+ 		if (dev) {
+ 			bus_sp5100[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_sp5100[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ */
+ 
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_After_Pci_Init();
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/supermicro/h8scm/agesawrapper.h b/src/mainboard/supermicro/h8scm/agesawrapper.h
+index 4f5a6934b0..51e438d497 100644
+--- a/src/mainboard/supermicro/h8scm/agesawrapper.h
++++ b/src/mainboard/supermicro/h8scm/agesawrapper.h
+@@ -1,82 +1,83 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *                             M O D U L E S    U S E D
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /*----------------------------------------------------------------------------------------
+  *                   D E F I N I T I O N S    A N D    M A C R O S
+  *----------------------------------------------------------------------------------------
+  */
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ 
+ enum {
+ 	PICK_DMI,       /* DMI Interface */
+ 	PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+ 	PICK_SRAT,      /* SRAT Table */
+ 	PICK_SLIT,      /* SLIT Table */
+ 	PICK_WHEA_MCE,  /* WHEA MCE table */
+ 	PICK_WHEA_CMC,  /* WHEA CMV table */
+ 	PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ 
+ 
+ /*----------------------------------------------------------------------------------------
+  *                  T Y P E D E F S     A N D     S T R U C T U  R E S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *           P R O T O T Y P E S     O F     L O C A L     F U  N C T I O N S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *                          E X P O R T E D    F U N C T I O N S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*---------------------------------------------------------------------------------------
+  *                          L O C A L    F U N C T I O N S
+  *---------------------------------------------------------------------------------------
+  */
+ 
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ UINT32 agesawrapper_amdreadeventlog (UINT8 HeapStatus);
+ UINT32 agesawrapper_amdinitmmio (void);
+ void *agesawrapper_getlateinitptr (int pick);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif
+diff --git a/src/mainboard/supermicro/h8scm/get_bus_conf.c b/src/mainboard/supermicro/h8scm/get_bus_conf.c
+index 4b2cb32fa2..4b51f2aed2 100644
+--- a/src/mainboard/supermicro/h8scm/get_bus_conf.c
++++ b/src/mainboard/supermicro/h8scm/get_bus_conf.c
+@@ -1,145 +1,123 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 - 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include "agesawrapper.h"
+ #include <cpu/amd/amdfam10_sysconf.h>
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ u8 bus_isa;
+ u8 bus_sp5100[2];
+ u8 bus_sr5650[14];
+ 
+ 
+ u32 bus_type[256];
+ 
+ u32 sbdn_sr5650;
+ u32 sbdn_sp5100;
+ 
+ static u32 get_bus_conf_done = 0;
+ 
+ 
+ void get_bus_conf(void)
+ {
+-	u32 status;
+-
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-	status = agesawrapper_amdinitlate();
+-	if(status) {
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-	}
+-
+ 	sbdn_sp5100 = 0;
+ 
+ 	for (i = 0; i < 0; i++) {
+ 		bus_sp5100[i] = 0;
+ 	}
+ 	for (i = 0; i < ARRAY_SIZE(bus_sr5650); i++) {
+ 		bus_sr5650[i] = 0;
+ 	}
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	bus_sr5650[0] = 0;
+ 	bus_sp5100[0] = bus_sr5650[0];
+ 
+ 	/* sp5100 */
+ 	dev = dev_find_slot(bus_sp5100[0], PCI_DEVFN(sbdn_sp5100 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sp5100[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sp5100[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	/* sr5650 */
+ 	for (i = 1; i < ARRAY_SIZE(bus_sr5650); i++) {
+ 		dev = dev_find_slot(bus_sr5650[0], PCI_DEVFN(sbdn_sr5650 + i, 0));
+ 		if (dev) {
+ 			bus_sr5650[i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			if(255 != bus_sr5650[i]) {
+ 				bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 				bus_isa++;
+ 				bus_type[bus_sr5650[i]] = 1; /* PCI bus. */
+ 			}
+ 		}
+ 	}
+ 
+ /*
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sp5100[0], PCI_DEVFN(sbdn_sp5100 + 0x14, i));
+ 		if (dev) {
+ 			bus_sp5100[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_sp5100[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ */
+ 
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_After_Pci_Init();
+ 	sb_Late_Post();
+ #endif
+ }
+diff --git a/src/mainboard/tyan/s8226/agesawrapper.h b/src/mainboard/tyan/s8226/agesawrapper.h
+index 4f5a6934b0..51e438d497 100644
+--- a/src/mainboard/tyan/s8226/agesawrapper.h
++++ b/src/mainboard/tyan/s8226/agesawrapper.h
+@@ -1,82 +1,83 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *                             M O D U L E S    U S E D
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ 
+ #ifndef _AGESAWRAPPER_H_
+ #define _AGESAWRAPPER_H_
+ 
+ #include <stdint.h>
+ #include "Porting.h"
+ #include "AGESA.h"
+ 
+ /*----------------------------------------------------------------------------------------
+  *                   D E F I N I T I O N S    A N D    M A C R O S
+  *----------------------------------------------------------------------------------------
+  */
+ #define PCIE_BASE_ADDRESS   CONFIG_MMCONF_BASE_ADDRESS
+ 
+ enum {
+ 	PICK_DMI,       /* DMI Interface */
+ 	PICK_PSTATE,    /* Acpi Pstate SSDT Table */
+ 	PICK_SRAT,      /* SRAT Table */
+ 	PICK_SLIT,      /* SLIT Table */
+ 	PICK_WHEA_MCE,  /* WHEA MCE table */
+ 	PICK_WHEA_CMC,  /* WHEA CMV table */
+ 	PICK_ALIB,      /* SACPI SSDT table with ALIB implementation */
+ };
+ 
+ 
+ 
+ /*----------------------------------------------------------------------------------------
+  *                  T Y P E D E F S     A N D     S T R U C T U  R E S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *           P R O T O T Y P E S     O F     L O C A L     F U  N C T I O N S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*----------------------------------------------------------------------------------------
+  *                          E X P O R T E D    F U N C T I O N S
+  *----------------------------------------------------------------------------------------
+  */
+ 
+ /*---------------------------------------------------------------------------------------
+  *                          L O C A L    F U N C T I O N S
+  *---------------------------------------------------------------------------------------
+  */
+ 
+ UINT32 agesawrapper_amdinitreset (void);
+ UINT32 agesawrapper_amdinitearly (void);
+ UINT32 agesawrapper_amdinitenv (void);
+ UINT32 agesawrapper_amdinitlate (void);
+ UINT32 agesawrapper_amdinitpost (void);
+ UINT32 agesawrapper_amdinitmid (void);
+ UINT32 agesawrapper_amdreadeventlog (UINT8 HeapStatus);
+ UINT32 agesawrapper_amdinitmmio (void);
+ void *agesawrapper_getlateinitptr (int pick);
+ UINT32 agesawrapper_amdlaterunaptask (UINT32 Func, UINT32 Data, VOID *ConfigPtr);
+ 
++static inline UINT32 agesawrapper_amdS3Save(void) { return 0; }
+ #endif
+diff --git a/src/mainboard/tyan/s8226/get_bus_conf.c b/src/mainboard/tyan/s8226/get_bus_conf.c
+index d45e1ad354..5c416c5538 100644
+--- a/src/mainboard/tyan/s8226/get_bus_conf.c
++++ b/src/mainboard/tyan/s8226/get_bus_conf.c
+@@ -1,144 +1,122 @@
+ /*
+  * This file is part of the coreboot project.
+  *
+  * Copyright (C) 2011 - 2012 Advanced Micro Devices, Inc.
+  *
+  * This program is free software; you can redistribute it and/or modify
+  * it under the terms of the GNU General Public License as published by
+  * the Free Software Foundation; version 2 of the License.
+  *
+  * This program is distributed in the hope that it will be useful,
+  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  * GNU General Public License for more details.
+  *
+  * You should have received a copy of the GNU General Public License
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+  */
+ 
+ #include <console/console.h>
+ #include <device/pci.h>
+ #include <device/pci_ids.h>
+ #include <string.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+ #include "agesawrapper.h"
+ #if CONFIG_AMD_SB_CIMX
+ #include <sb_cimx.h>
+ #endif
+ 
+ 
+ /* Global variables for MB layouts and these will be shared by irqtable mptable
+  * and acpi_tables busnum is default.
+  */
+ int bus_isa;
+ u8 bus_sp5100[2];
+ u8 bus_sr5650[14];
+ 
+ 
+ u32 bus_type[256];
+ 
+ u32 sbdn_sr5650;
+ u32 sbdn_sp5100;
+ 
+ void get_bus_conf(void);
+ static u32 get_bus_conf_done = 0;
+ 
+ void get_bus_conf(void)
+ {
+-	u32 status;
+-
+ 	device_t dev;
+ 	int i, j;
+ 
+ 	if (get_bus_conf_done == 1)
+ 		return;   /* do it only once */
+ 
+ 	get_bus_conf_done = 1;
+ 
+-	/*
+-	 * This is the call to AmdInitLate.  It is really in the wrong place, conceptually,
+-	 * but functionally within the coreboot model, this is the best place to make the
+-	 * call.  The logically correct place to call AmdInitLate is after PCI scan is done,
+-	 * after the decision about S3 resume is made, and before the system tables are
+-	 * written into RAM.  The routine that is responsible for writing the tables is
+-	 * "write_tables", called near the end of "main".  There is no platform
+-	 * specific entry point between the S3 resume decision point and the call to
+-	 * "write_tables", and the next platform specific entry points are the calls to
+-	 * the ACPI table write functions.  The first of ose would seem to be the right
+-	 * place, but other table write functions, e.g. the PIRQ table write function, are
+-	 * called before the ACPI tables are written.  This routine is called at the beginning
+-	 * of each of the write functions called prior to the ACPI write functions, so this
+-	 * becomes the best place for this call.
+-	 */
+-	status = agesawrapper_amdinitlate();
+-	if(status) {
+-		printk(BIOS_DEBUG, "agesawrapper_amdinitlate failed: %x \n", status);
+-	}
+-
+ 	sbdn_sp5100 = 0;
+ 
+ 	for (i = 0; i < 0; i++) {
+ 		bus_sp5100[i] = 0;
+ 	}
+ 	for (i = 0; i < ARRAY_SIZE(bus_sr5650); i++) {
+ 		bus_sr5650[i] = 0;
+ 	}
+ 
+ 	for (i = 0; i < 256; i++) {
+ 		bus_type[i] = 0; /* default ISA bus. */
+ 	}
+ 
+ 	bus_type[0] = 1;  /* pci */
+ 
+ 	bus_sr5650[0] = 0;
+ 	bus_sp5100[0] = bus_sr5650[0];
+ 
+ 	/* sp5100 */
+ 	dev = dev_find_slot(bus_sp5100[0], PCI_DEVFN(sbdn_sp5100 + 0x14, 4));
+ 
+ 	if (dev) {
+ 		bus_sp5100[1] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 
+ 		bus_isa = (int)pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 		bus_isa++;
+ 		for (j = bus_sp5100[1]; j < bus_isa; j++)
+ 			bus_type[j] = 1;
+ 	}
+ 
+ 	/* sr5650 */
+ 	for (i = 1; i < ARRAY_SIZE(bus_sr5650); i++) {
+ 		dev = dev_find_slot(bus_sr5650[0], PCI_DEVFN(sbdn_sr5650 + i, 0));
+ 		if (dev) {
+ 			bus_sr5650[i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			if(255 != bus_sr5650[i]) {
+ 				bus_isa = (int)pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 				bus_isa++;
+ 				bus_type[bus_sr5650[i]] = 1; /* PCI bus. */
+ 			}
+ 		}
+ 	}
+ 
+ /*
+ 	for (i = 0; i < 4; i++) {
+ 		dev = dev_find_slot(bus_sp5100[0], PCI_DEVFN(sbdn_sp5100 + 0x14, i));
+ 		if (dev) {
+ 			bus_sp5100[2 + i] = pci_read_config8(dev, PCI_SECONDARY_BUS);
+ 			bus_isa = pci_read_config8(dev, PCI_SUBORDINATE_BUS);
+ 			bus_isa++;
+ 		}
+ 	}
+ 	for (j = bus_sp5100[2]; j < bus_isa; j++)
+ 		bus_type[j] = 1;
+ */
+ 
+ 
+ 	/* I/O APICs:   APIC ID Version State   Address */
+ 	bus_isa = 10;
+ 
+ #if CONFIG_AMD_SB_CIMX
+ 	sb_After_Pci_Init();
+ 	sb_Late_Post();
+ #endif
+ }
