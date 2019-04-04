@@ -1,0 +1,33 @@
+commit multiBuildWithVarChange.txt
+diff --git a/Makefile b/Makefile
+index 15209be..d35f1a4 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,430 +1,429 @@
+# Artificial makefile change
+
++# Comment to be ignored in counting var changes
+
++ifneq ($(some_symbol),y)
++
++endif
+
+diff --git a/some/Path/Kbuild b/some/Path/Kbuild
+index 15209be..d35f1a4 100644
+--- a/some/Path/Kbuild
++++ b/some/Path/Kbuild
+@@ -1,430 +1,429 @@
+# Artificial makefile change
+
+-ifeq ($(CONFIG_PAYLOAD_ELF),y) # This should be counted as variability change
+-GOAL+=filo # previous $(CONFIG_A) [should not be counted as variability change]
+-endif
+
+diff --git a/other/Makefile b/other/Makefile
+index 15209be..d35f1a4 100644
+--- a/other/Makefile
++++ b/other/Makefile
+@@ -1,430 +1,429 @@
+# Artificial makefile change
+
++# No relevant changes here

@@ -1,0 +1,236 @@
+commit comanCodeChanges.txt
+diff --git a/CodeFile1.c b/CodeFile1.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile1.c
++++ b/CodeFile1.c
+@@ -1,430 +1,429 @@
+ // Here come the full content of the file and
+ /* the changes introduced by the commit */
+ /*
+  * These lines introduce comments that should
+  * be ignored.
+  */
+
+-
+
++ 
+
+diff --git a/CodeFile2.c b/CodeFile2.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile2.c
++++ b/CodeFile2.c
+@@ -1,430 +1,429 @@
+-if (CONFIG_OUTER) {
+	doSome();
+	if (CONFIG_INNER) {
+		doSomeMore();
+	}
+-}
+
+diff --git a/CodeFile3.c b/CodeFile3.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile3.c
++++ b/CodeFile3.c
+@@ -1,430 +1,429 @@
+-if (CONFIG_OUTER) {
+-	doSome();
++	if (CONFIG_INNER) {
++		doSomeMore();
++	}
+-}
+
+diff --git a/CodeFile4.c b/CodeFile4.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile4.c
++++ b/CodeFile4.c
+@@ -1,430 +1,429 @@
+-if (CONFIG_OUTER) {
+-	doSome();
+-	if (CONFIG_INNER) {
+-		doSomeMore();
+-	}
+-}
+
+diff --git a/CodeFile5.c b/CodeFile5.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile5.c
++++ b/CodeFile5.c
+@@ -1,430 +1,429 @@
+if (CONFIG_SYMBOL) {
+	doSome();
+-}
+	doSomeMore();
++}
+ 
+diff --git a/CodeFile6.c b/CodeFile6.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile6.c
++++ b/CodeFile6.c
+@@ -1,430 +1,429 @@
++#ifdef CONFIG_OUTER
+#ifdef CONFIG_INNER
+#else
+#endif
++#endif
+
+diff --git a/CodeFile7.c b/CodeFile7.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile7.c
++++ b/CodeFile7.c
+@@ -1,430 +1,429 @@
+-#ifdef OUTER 
+-#ifdef CONFIG_INNER
+-#else
+-#endif
+-#endif
+
+diff --git a/CodeFile8.c b/CodeFile8.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile8.c
++++ b/CodeFile8.c
+@@ -1,430 +1,429 @@
+ #if !CONFIG_MAINBOARD_DO_NATIVE_VGA_INIT
+    /* PCI Init, will run VBIOS */
+    pci_dev_init(dev);
+ #else
+    printk(BIOS_SPEW, "Initializing VGA without OPROM.\n");
+-#endif
+    fake_vbios();
++#endif
+
+diff --git a/CodeFile9.c b/CodeFile9.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile.c
++++ b/CodeFile.c
+@@ -1,430 +1,429 @@
+-#define SOME_CODE_CONFIG_OPTION  
+
+diff --git a/CodeFile10.c b/CodeFile10.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile10.c
++++ b/CodeFile10.c
+@@ -1,430 +1,429 @@
+#ifdef CONFIG_A
++// Neither this comment, nor the surrounding #ifdef CONFIG_A should be identified as variability change
+#endif
+
++#ifdef CONFIG_B
+-/* This comment should not be identified, but the surrounding #ifdef CONFIG_B */
++#endif
+
+diff --git a/CodeFile11.c b/CodeFile11.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile.c
++++ b/CodeFile.c
+@@ -1,430 +1,429 @@
+-#if ! defined(CONFIG_C)
+-/* This comment should not be identified, but the surrounding #if ! defined(CONFIG_C) */
+-#else
+-/* This comment should not be identified,
+- * but the surrounding #else
+- */
+-#endif
+
+diff --git a/CodeFile12.c b/CodeFile12.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile12.c
++++ b/CodeFile12.c
+@@ -1,430 +1,429 @@
++#if IS_MODULE(CONFIG_D)
++// This comment should not be identified, but the surrounding #if IS_MODULE(CONFIG_D)
++#elif defined(SOURCE_SYMBOL_A)
++// Neither this comment, nor the surrounding #elif defined(SOURCE_SYMBOL_A) should be identified as variability change
++#else
++// This comment should not be identified, but the surrounding #else
++#endif
+
+diff --git a/CodeFile13.c b/CodeFile13.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile.c
++++ b/CodeFile.c
+@@ -1,430 +1,429 @@
+-#if IS_REACHABLE(CONFIG_E)
+-#ifdef CONFIG_F
+-#else
+-#endif
+-#endif
+
+diff --git a/CodeFile14.c b/CodeFile14.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile14.c
++++ b/CodeFile14.c
+@@ -1,430 +1,429 @@
++#if SOURCE_SYMBOL_B \
++       || defined(CONFIG_G)
++#endif
+
+diff --git a/CodeFile15.c b/CodeFile15.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile15.c
++++ b/CodeFile15.c
+@@ -1,430 +1,429 @@
+-/*
+- * #ifdef CONFIG_Z
+- *
+- * #endif
+- */
+
+diff --git a/CodeFile16.c b/CodeFile16.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile16.c
++++ b/CodeFile16.c
+@@ -1,430 +1,429 @@
++# define MD5_SMALL CONFIG_MD5_SMALL
+
+diff --git a/CodeFile17.c b/CodeFile17.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile17.c
++++ b/CodeFile17.c
+@@ -1,430 +1,429 @@
+-/* Multi-line comment infront of Config-symbol */ printf("Num of CPU: %i\n", CONFIG_CPU_NUM);
+-/* Multi-line comment including CONFIG_CPU_NUM symbol */ printf("Num of CPU: %i\n", 5);
++printf("Num of CPU: %i\n", CONFIG_CPU_NUM); /* Multi-line comment after of Config-symbol */
+
++   if ((busn != CONFIG_CBB) && (MAX_NODE_NUMS == 64)) {
++       return (dev->path.pci.devfn >> 3) - CONFIG_CDB + 32;
++   } else {
++       return (dev->path.pci.devfn >> 3) - CONFIG_CDB;
++   }
+
+diff --git a/CodeFile18.c b/CodeFile18.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile18.c
++++ b/CodeFile18.c
+@@ -1,430 +1,429 @@
++if (IS_ENABLED(X)
++       && CONFIG_A == 5) {
++   i++;
++}
+
+diff --git a/CodeFile19.c b/CodeFile19.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile19.c
++++ b/CodeFile19.c
+@@ -1,430 +1,429 @@
+if (true) {
+    // Something here
+    if (false) {
+        // Something here
+    }
++} else if (CONFIG_B == 10) {
++    // Something here
++}
+
+diff --git a/CodeFile20.c b/CodeFile20.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile.c
++++ b/CodeFile.c
+@@ -1,430 +1,429 @@
+if (CONFIG_C) {
+    if (CONFIG_D) {
++    }
++   if (CONFIG_E) {
+    } else {
+    }
++} else {
+}

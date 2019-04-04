@@ -1,0 +1,13 @@
+commit simpleVariabilityModelChange.txt
+diff --git a/Kconfig b/Kconfig
+index 15209be..d35f1a4 100644
+--- a/Kconfig
++++ b/Kconfig
+@@ -1,430 +1,429 @@
+
+config HAVE_DEC_LOCK
+    bool
+    depends on SMP
+    default y
++    comment "ABC"
++        depends on !ABC

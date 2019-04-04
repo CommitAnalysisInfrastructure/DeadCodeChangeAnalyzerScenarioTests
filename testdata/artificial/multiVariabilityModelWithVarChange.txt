@@ -1,0 +1,30 @@
+commit multiVariabilityModelWithVarChange.txt
+diff --git a/Kconfig b/Kconfig
+index 15209be..d35f1a4 100644
+--- a/Kconfig
++++ b/Kconfig
+@@ -1,430 +1,429 @@
+
++# Just a comment
+
+diff --git a/some/Path/Kconfig b/some/Path/Kconfig
+index 15209be..d35f1a4 100644
+--- a/some/Path/Kconfig
++++ b/some/Path/Kconfig
+@@ -1,430 +1,429 @@
+
+-choice
+-    prompt "Alpha system type"
+-    default ALPHA_GENERIC
+-    ---help---
+-      This is the system type of your hardware.  A "generic" kernel will
+-      run on any supported Alpha system. However, if you configure a
+-      kernel for your specific system, it will be faster and smaller.
+
+diff --git a/other/Kconfig b/other/Kconfig
+index 15209be..d35f1a4 100644
+--- a/other/Kconfig
++++ b/other/Kconfig
+@@ -1,430 +1,429 @@
+
++# Another comment

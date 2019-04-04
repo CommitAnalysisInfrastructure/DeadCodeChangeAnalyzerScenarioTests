@@ -1,0 +1,8 @@
+commit simpleVariabilityModelVarChange.txt
+diff --git a/Kconfig b/Kconfig
+index 15209be..d35f1a4 100644
+--- a/Kconfig
++++ b/Kconfig
+@@ -1,430 +1,429 @@
+
++source src/northbridge/intel/sandybridge/Kconfig

@@ -1,0 +1,38 @@
+commit multiCodeWithVarChange.txt
+diff --git a/CodeFile.c b/CodeFile.c
+index 15209be..d35f1a4 100644
+--- a/CodeFile.c
++++ b/CodeFile.c
+@@ -1,430 +1,429 @@
+
++// This simply adds a comment
+
+diff --git a/Code.c b/Code.c
+index 15209be..d35f1a4 100644
+--- a/Code.c
++++ b/Code.c
+@@ -1,430 +1,429 @@
+
++#if IS_MODULE(CONFIG_X)
++    // Some variable code
++#endif
+
+diff --git a/other/Header.h b/other/Code.h
+index 15209be..d35f1a4 100644
+--- a/other/Header.h
++++ b/other/Header.h
+@@ -1,430 +1,429 @@
+
++// This simply adds a comment
+
+diff --git a/other/Code.c b/other/Code.c
+index 15209be..d35f1a4 100644
+--- a/other/Code.c
++++ b/other/Code.c
+@@ -1,430 +1,429 @@
+
+#if IS_MODULE(CONFIG_X)
+    // Some variable code
++#else
++    // We need an alternative here
+#endif

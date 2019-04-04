@@ -1,0 +1,9 @@
+commit simpleBuildVarChange.txt
+diff --git a/Makefile b/Makefile
+index 15209be..d35f1a4 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,430 +1,429 @@
+# Artificial makefile change
+
+-GOAL+= $(CONFIG_OPTION)

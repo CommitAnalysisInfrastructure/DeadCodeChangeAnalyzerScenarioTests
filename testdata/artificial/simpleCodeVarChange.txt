@@ -1,0 +1,10 @@
+commit simpleCodeVarChange.txt
+diff --git a/Code.c b/Code.c
+index 15209be..d35f1a4 100644
+--- a/Code.c
++++ b/Code.c
+@@ -1,430 +1,429 @@
+
++#ifdef CONFIG_A
++    // Here comes some variable code
++#endif

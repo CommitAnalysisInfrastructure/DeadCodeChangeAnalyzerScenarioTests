@@ -1,0 +1,15 @@
+commit deleteDeadConfigBlockChange.txt
+diff --git a/Code.c b/Code.c
+index 15209be..d35f1a4 100644
+--- a/Code.c
++++ b/Code.c
+@@ -1,430 +1,429 @@
+
+ // For the dead code analysis, this is always relevant and, hence, should be detected as relevant change
+ #if 0
+
+-#ifdef CONFIG_X
+ 
+-#endif
+
+ #endif
