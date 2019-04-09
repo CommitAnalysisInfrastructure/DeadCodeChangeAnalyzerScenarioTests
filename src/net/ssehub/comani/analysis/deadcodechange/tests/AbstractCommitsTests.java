@@ -58,16 +58,13 @@ public abstract class AbstractCommitsTests {
      * 
      * @param testCommitsDirectory the {@link File} denoting the directory in which the test commit files are located
      * @param testCommitFileNames the names of the test commit files located in the given directory
-     * @param considerAllBlocks <code>true</code> if the diff analysis should consider all preprocessor blocks or
-     *        <code>false</code> if it should only consider blocks with references to configuration options
      * @throws ExtractionSetupException if instantiating the commit extractor fails
      * @throws AnalysisSetupException if instantiating the commit analyzer fails
      */
-    public static void setUp(File testCommitsDirectory, String[] testCommitFileNames, boolean considerAllBlocks)
+    public static void setUp(File testCommitsDirectory, String[] testCommitFileNames)
             throws ExtractionSetupException, AnalysisSetupException {
         System.out.println("## Setting up tests based on commits located at \"" + testCommitsDirectory.getPath() 
                 + "\" ##");
-        System.out.println("   --> Considering all blocks: " + considerAllBlocks);
         // Define the required properties for the commit extractor and analyzer
         Properties pluginProperties = new Properties();
         pluginProperties.setProperty("core.version_control_system", "git");
@@ -75,10 +72,6 @@ public abstract class AbstractCommitsTests {
         pluginProperties.setProperty("analysis.dead_code_change_analyzer.vm_files_regex", VM_FILES_REGEX);
         pluginProperties.setProperty("analysis.dead_code_change_analyzer.code_files_regex", CODE_FILES_REGEX);
         pluginProperties.setProperty("analysis.dead_code_change_analyzer.build_files_regex", BUILD_FILES_REGEX);
-        if (!considerAllBlocks) {            
-            // Default value is true: only set this property, if we explicitly exclude the consideration of all blocks
-            pluginProperties.setProperty("analysis.dead_code_change_analyzer.consider_all_blocks", "false");
-        }
         // Instantiate the common commit queue for the commit extractor and analyzer
         CommitQueue commitQueue = new CommitQueue(testCommitFileNames.length);
         // Instantiate the commit extractor and analyzer

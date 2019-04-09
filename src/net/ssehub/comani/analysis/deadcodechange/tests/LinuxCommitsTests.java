@@ -1,4 +1,4 @@
-package net.ssehub.comani.analysis.deadcodechange.tests.artificial;
+package net.ssehub.comani.analysis.deadcodechange.tests;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -16,25 +16,24 @@ import org.junit.runners.Parameterized.Parameters;
 
 import net.ssehub.comani.analysis.AnalysisSetupException;
 import net.ssehub.comani.analysis.deadcodechange.diff.AnalysisResult;
-import net.ssehub.comani.analysis.deadcodechange.tests.AbstractCommitsTests;
 import net.ssehub.comani.extraction.ExtractionSetupException;
 
 /**
  * This class provides some {@link net.ssehub.comani.analysis.deadcodechange.core.DeadCodeChangeAnalyzer} tests based on
- * artificial commit files. The commit analysis is configured to consider changes only to those blocks in the code 
- * files, which reference a configuration option defined in the variability model. 
+ * commit files containing commits from the Linux kernel. The commit analysis is configured to consider changes to all
+ * blocks in the code files.
  * 
  * @author Christian Kroeher
  *
  */
 @RunWith(Parameterized.class)
-public class ArtificialCommitsConfigBlocksTests extends AbstractCommitsTests {
+public class LinuxCommitsTests extends AbstractCommitsTests {
 
     /**
      * The directory in which the test commit files are located. Each file contains the information of a particular
-     * yet artificial commit.
+     * Linux kernel commit.
      */
-    private static final File TEST_COMMITS_DIRECTORY = new File("./testdata/artificial");
+    private static final File TEST_COMMITS_DIRECTORY = new File("./testdata/linux");
     
     /**
      * The expected results of the analysis. This two-dimensional array contains the following information:
@@ -54,39 +53,40 @@ public class ArtificialCommitsConfigBlocksTests extends AbstractCommitsTests {
      * </ul>
      * The test commit file names are used during the setup of this test class.
      * 
-     * @see ArtificialCommitsConfigBlocksTests#setUp(File, String[], boolean)
+     * @see LinuxCommitsTests#setUp(File, String[], boolean)
      */
     private static final Object[][] EXPECTED_RESULTS = new Object[][]{
-        {"simpleBuildVarChange.txt", new String[]{}, true, false},
-        {"simpleBuildChange.txt", new String[]{}, false, false},
-        {"multiBuildWithVarChange.txt", new String[]{}, true, false},
-        
-        {"simpleVariabilityModelVarChange.txt", new String[]{}, false, true},
-        {"simpleVariabilityModelChange.txt", new String[]{}, false, false},
-        {"multiVariabilityModelWithVarChange.txt", new String[]{}, false, true},
-        
-        {"simpleCodeVarChange.txt", new String[]{"/Code.c"}, false, false},
-        {"simpleCodeChange.txt", new String[]{}, false, false},
-        {"multiCodeWithVarChange.txt", new String[]{"/Code.c", "/other/Code.c"}, false, false},
-        
-        {"singleIfDefNoVarChange.txt", new String[]{}, false, false},
-        
-        {"produceDeadConfigBlockChange.txt", new String[]{"/Code.c"}, false, false},
-        
-        {"produceDeadConfigBlockByElseChange.txt", new String[]{"/Code.c"}, false, false},
-        
-        {"produceDeadConfigBlockByEndIfChange.txt", new String[]{"/Code.c"}, false, false},
-        
-        {"addDeadConfigBlockChange.txt", new String[]{"/Code.c"}, false, false},
-        
-        {"deleteDeadConfigBlockChange.txt", new String[]{"/Code.c"}, false, false},
-        
-        {"deleteChildBlockChange.txt", new String[]{}, false, false},
-        
-        {"addParentBlockChange.txt", new String[]{"/Code.c"}, false, false},
-        
-        {"comanCodeChanges.txt", new String[]{"/CodeFile6.c", "/CodeFile7.c", "/CodeFile8.c", "/CodeFile10.c",
-            "/CodeFile11.c", "/CodeFile12.c", "/CodeFile13.c", "/CodeFile14.c"}, false, false}
+        {"1ce6311.txt", new String[]{}, false, false},
+        {"1dff333.txt", new String[]{}, false, false},
+        {"2572f00.txt", new String[]{"/arch/mips/include/asm/mach-pic32/cpu-feature-overrides.h",
+            "/arch/mips/include/asm/mach-pic32/irq.h",
+            "/arch/mips/include/asm/mach-pic32/pic32.h",
+            "/arch/mips/include/asm/mach-pic32/spaces.h",
+            "/arch/mips/pic32/pic32mzda/early_console.c",
+            "/arch/mips/pic32/pic32mzda/early_pin.h",
+            "/arch/mips/pic32/pic32mzda/init.c",
+            "/arch/mips/pic32/pic32mzda/pic32mzda.h",
+            "/include/linux/platform_data/sdhci-pic32.h"}, true, true},
+        {"35a7051.txt", new String[]{}, false, false},
+        {"4294616.txt", new String[]{}, false, false},
+        {"5793e27.txt", new String[]{"/arch/arc/include/asm/irqflags-compact.h",
+            "/arch/arc/include/asm/irqflags.h",
+            "/arch/arc/kernel/intc-compact.c",
+            "/arch/arc/kernel/irq.c"}, false, false},
+        {"5b3f341.txt", new String[]{}, false, false},
+        {"60a27d6.txt", new String[]{}, false, false},
+        {"60ff189.txt", new String[]{}, false, false},
+        {"79c7c7a.txt", new String[]{}, false, false},
+        {"b4c45fe.txt", new String[]{"/drivers/pinctrl/qcom/pinctrl-ssbi-gpio.c",
+            "/drivers/pinctrl/qcom/pinctrl-ssbi-mpp.c"}, true, true},
+        {"ba12ac2.txt", new String[]{}, false, false},
+        {"c2e13cc.txt", new String[]{}, false, false},
+        {"c61f4d5.txt", new String[]{}, false, false},
+        {"dd739ea.txt", new String[]{}, false, false},
+        {"efde611.txt", new String[]{}, false, false},
+        {"f953ccd.txt", new String[]{}, false, false},
+        {"fbfbc48.txt", new String[]{}, false, false},
+        {"fcf6c5e.txt", new String[]{}, false, false} 
     };
     
     /**
@@ -114,13 +114,13 @@ public class ArtificialCommitsConfigBlocksTests extends AbstractCommitsTests {
     
     /**
      * The actual {@link AnalysisResult} of the commit file for which this test class is currently executed. Its value
-     * is set during {@link #ArtificialCommitsTests(String, String[], boolean, boolean)} and by calling 
+     * is set during {@link #LinuxCommitsAllBlocksTests(String, String[], boolean, boolean)} and by calling 
      * {@link #getResult(String)}.
      */
     private AnalysisResult actualResult;
     
     /**
-     * Constructs a new {@link ArtificialCommitsConfigBlocksTests} instance.
+     * Constructs a new {@link LinuxCommitsTests} instance.
      * 
      * @param testcommitFileName the name of the commit file including its file extension for which this test class
      *        should be executed
@@ -132,7 +132,7 @@ public class ArtificialCommitsConfigBlocksTests extends AbstractCommitsTests {
      *        the variability model in a way that requires a dead code analysis (<code>true</code>) or not
      *        (<code>false</code>)
      */
-    public ArtificialCommitsConfigBlocksTests(String testcommitFileName, String[] expectedCodeChanges,
+    public LinuxCommitsTests(String testcommitFileName, String[] expectedCodeChanges,
             boolean expectedBuildChanges, boolean expectedVariabilityModelChanges) {
         this.testCommitFileName = testcommitFileName;
         this.expectedCodeChanges = expectedCodeChanges;
@@ -143,8 +143,8 @@ public class ArtificialCommitsConfigBlocksTests extends AbstractCommitsTests {
     
     /**
      * Calls the {@link #setUp(File, String[], boolean)} of the parent class with the {@link #TEST_COMMITS_DIRECTORY},
-     * the test commit file names defined as part of the {@link #EXPECTED_RESULTS}, and <code>false</code> to consider
-     * only those blocks, which reference a configuration option defined in the variability model. 
+     * the test commit file names defined as part of the {@link #EXPECTED_RESULTS}, and <code>true</code> to consider
+     * all blocks. 
      * 
      * @throws ExtractionSetupException if instantiating the commit extractor fails
      * @throws AnalysisSetupException if instantiating the commit analyzer fails
@@ -156,7 +156,7 @@ public class ArtificialCommitsConfigBlocksTests extends AbstractCommitsTests {
         for (int i = 0; i < EXPECTED_RESULTS.length; i++) {
             testCommitFileNames[i] = (String) EXPECTED_RESULTS[i][0];
         }
-        setUp(TEST_COMMITS_DIRECTORY, testCommitFileNames, false);
+        setUp(TEST_COMMITS_DIRECTORY, testCommitFileNames);
     }    
     
     /**
@@ -223,5 +223,5 @@ public class ArtificialCommitsConfigBlocksTests extends AbstractCommitsTests {
         assertEquals("Variability model changes for test file \"" + testCommitFileName + "\" do not match",
                 expectedVariabilityModelChanges, actualResult.getRelevantVariabilityModelChanges());
     }
-
+    
 }

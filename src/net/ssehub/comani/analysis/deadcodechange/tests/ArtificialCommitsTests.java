@@ -1,4 +1,4 @@
-package net.ssehub.comani.analysis.deadcodechange.tests.coreboot;
+package net.ssehub.comani.analysis.deadcodechange.tests;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -16,25 +16,23 @@ import org.junit.runners.Parameterized.Parameters;
 
 import net.ssehub.comani.analysis.AnalysisSetupException;
 import net.ssehub.comani.analysis.deadcodechange.diff.AnalysisResult;
-import net.ssehub.comani.analysis.deadcodechange.tests.AbstractCommitsTests;
 import net.ssehub.comani.extraction.ExtractionSetupException;
 
 /**
  * This class provides some {@link net.ssehub.comani.analysis.deadcodechange.core.DeadCodeChangeAnalyzer} tests based on
- * commit files containing commits from the Coreboot firmware. The commit analysis is configured to consider changes to
- * all blocks in the code files.
+ * artificial commit files. The commit analysis is configured to consider changes to all blocks in the code files.
  * 
  * @author Christian Kroeher
  *
  */
 @RunWith(Parameterized.class)
-public class CorebootCommitsAllBlocksTests extends AbstractCommitsTests {
+public class ArtificialCommitsTests extends AbstractCommitsTests {
 
     /**
      * The directory in which the test commit files are located. Each file contains the information of a particular
-     * Coreboot firmware commit.
+     * yet artificial commit.
      */
-    private static final File TEST_COMMITS_DIRECTORY = new File("./testdata/coreboot");
+    private static final File TEST_COMMITS_DIRECTORY = new File("./testdata/artificial");
     
     /**
      * The expected results of the analysis. This two-dimensional array contains the following information:
@@ -54,58 +52,43 @@ public class CorebootCommitsAllBlocksTests extends AbstractCommitsTests {
      * </ul>
      * The test commit file names are used during the setup of this test class.
      * 
-     * @see CorebootCommitsAllBlocksTests#setUp(File, String[], boolean)
+     * @see ArtificialCommitsTests#setUp(File, String[], boolean)
      */
     private static final Object[][] EXPECTED_RESULTS = new Object[][]{
-        {"00093a8.txt", new String[]{"/src/arch/x86/include/arch/acpi.h",
-            "/src/cpu/x86/mtrr/mtrr.c",
-            "/src/include/cpu/x86/lapic.h"}, false, true},
-        {"000bf83.txt", new String[]{"/src/cpu/x86/lapic/lapic_cpu_init.c"}, false, false},
-        {"0010bf6.txt", new String[]{}, true, true},
-        {"005028e.txt", new String[]{"/src/mainboard/amd/olivehill/get_bus_conf.c",
-            "/src/mainboard/amd/parmer/get_bus_conf.c",
-            "/src/mainboard/amd/persimmon/get_bus_conf.c",
-            "/src/mainboard/amd/thatcher/get_bus_conf.c",
-            "/src/mainboard/asrock/imb-a180/get_bus_conf.c",
-            "/src/mainboard/asus/f2a85-m/get_bus_conf.c",
-            "/src/mainboard/gizmosphere/gizmo/get_bus_conf.c",
-            "/src/mainboard/hp/pavilion_m6_1035dx/get_bus_conf.c",
-            "/src/mainboard/jetway/nf81-t56n-lf/get_bus_conf.c",
-            "/src/mainboard/lippert/frontrunner-af/get_bus_conf.c",
-            "/src/mainboard/lippert/toucan-af/get_bus_conf.c"}, false, false},
-        {"0054afa.txt", new String[]{}, true, true},
-        {"006364e.txt", new String[]{"/src/northbridge/amd/pi/00630F01/chip.h",
-            "/src/northbridge/amd/pi/00630F01/northbridge.c",
-            "/src/northbridge/amd/pi/00630F01/northbridge.h",
-            "/src/northbridge/amd/pi/00630F01/pci_devs.h",
-            "/src/northbridge/amd/pi/BiosCallOuts.h"}, true, true},
-        {"00636b0.txt", new String[]{"/src/northbridge/intel/sandybridge/northbridge.c",
-            "/src/northbridge/intel/sandybridge/pei_data.h",
-            "/src/northbridge/intel/sandybridge/raminit.c",
-            "/src/northbridge/intel/sandybridge/raminit.h",
-            "/src/northbridge/intel/sandybridge/sandybridge.h"}, true, true},
-        {"00809eb.txt", new String[]{}, false, false},
-        {"0092c99.txt", new String[]{"/src/northbridge/intel/i945/gma.c"}, false, true},
-        {"00b579a.txt", new String[]{"/src/cpu/intel/microcode/microcode.c",
-            "/src/include/cpu/intel/microcode.h"}, true, true},
-        {"2a19fb1.txt", new String[]{"/src/mainboard/advansus/a785e-i/acpi_tables.c",
-            "/src/mainboard/amd/bimini_fam10/acpi_tables.c",
-            "/src/mainboard/amd/tilapia_fam10/acpi_tables.c",
-            "/src/mainboard/asus/m4a78-em/acpi_tables.c",
-            "/src/northbridge/amd/amdfam10/northbridge.c",
-            "/src/southbridge/amd/cimx/sb800/late.c"}, true, true},
-        {"2b7c88f.txt", new String[]{}, false, false},
-        {"398e84c.txt", new String[]{"/src/arch/armv7/boot/coreboot_table.c"}, false, false},
-        {"480b37f.txt", new String[]{}, false, false},
-        {"74234eb.txt", new String[]{}, false, true},
-        {"9855895.txt", new String[]{}, false, true},
-        {"9d6be3e.txt", new String[]{"/src/mainboard/iwill/DK8S2/auto.c",
-            "/src/mainboard/iwill/DK8X/auto.c",
-            "/src/mainboard/iwill/dk8X/auto.c",
-            "/src/mainboard/iwill/dk8s2/auto.c"}, false, false},
-        {"c3e728f.txt", new String[]{}, true, false},
-        {"eedf7a6.txt", new String[]{}, true, true},
-        {"f040858.txt", new String[]{}, true, true}
+        {"simpleBuildVarChange.txt", new String[]{}, true, false},
+        {"simpleBuildChange.txt", new String[]{}, false, false},
+        {"multiBuildWithVarChange.txt", new String[]{}, true, false},
+        
+        {"simpleVariabilityModelVarChange.txt", new String[]{}, false, true},
+        {"simpleVariabilityModelChange.txt", new String[]{}, false, false},
+        {"multiVariabilityModelWithVarChange.txt", new String[]{}, false, true},
+        
+        {"simpleCodeVarChange.txt", new String[]{"/Code.c"}, false, false},
+        {"simpleCodeChange.txt", new String[]{}, false, false},
+        {"multiCodeWithVarChange.txt", new String[]{"/Code.c", "/other/Code.c"}, false, false},
+        
+        {"singleIfDefNoVarChange.txt", new String[]{"/Code.c"}, false, false},
+        
+        {"produceDeadConfigBlockChange.txt", new String[]{"/Code.c"}, false, false},
+        
+        {"produceDeadConfigBlockByElseChange.txt", new String[]{"/Code.c"}, false, false},
+        
+        {"produceDeadConfigBlockByEndIfChange.txt", new String[]{"/Code.c"}, false, false},
+        
+        {"addDeadConfigBlockChange.txt", new String[]{"/Code.c"}, false, false},
+        
+        {"deleteDeadConfigBlockChange.txt", new String[]{"/Code.c"}, false, false},
+        
+        {"deleteChildBlockChange.txt", new String[]{"/Code.c"}, false, false},
+        
+        {"addParentBlockChange.txt", new String[]{"/Code.c"}, false, false},
+        
+        {"comanCodeChanges.txt", new String[]{"/CodeFile6.c", "/CodeFile7.c", "/CodeFile8.c", "/CodeFile10.c",
+            "/CodeFile11.c", "/CodeFile12.c", "/CodeFile13.c", "/CodeFile14.c"}, false, false},
+        
+        {"addChildBlockChange.txt", new String[]{"/Code.c"}, false, false},
+        {"deleteConfigBlockChange.txt", new String[]{"/Code.c"}, false, false},
+        {"narrowBlockFromVarToNonVarChange.txt", new String[]{"/Code.c"}, false, false}
     };
     
     /**
@@ -133,13 +116,13 @@ public class CorebootCommitsAllBlocksTests extends AbstractCommitsTests {
     
     /**
      * The actual {@link AnalysisResult} of the commit file for which this test class is currently executed. Its value
-     * is set during {@link #CorebootCommitsAllBlocksTests(String, String[], boolean, boolean)} and by calling 
+     * is set during {@link #ArtificialCommitsTests(String, String[], boolean, boolean)} and by calling 
      * {@link #getResult(String)}.
      */
     private AnalysisResult actualResult;
     
     /**
-     * Constructs a new {@link CorebootCommitsAllBlocksTests} instance.
+     * Constructs a new {@link ArtificialCommitsTests} instance.
      * 
      * @param testcommitFileName the name of the commit file including its file extension for which this test class
      *        should be executed
@@ -151,7 +134,7 @@ public class CorebootCommitsAllBlocksTests extends AbstractCommitsTests {
      *        the variability model in a way that requires a dead code analysis (<code>true</code>) or not
      *        (<code>false</code>)
      */
-    public CorebootCommitsAllBlocksTests(String testcommitFileName, String[] expectedCodeChanges,
+    public ArtificialCommitsTests(String testcommitFileName, String[] expectedCodeChanges,
             boolean expectedBuildChanges, boolean expectedVariabilityModelChanges) {
         this.testCommitFileName = testcommitFileName;
         this.expectedCodeChanges = expectedCodeChanges;
@@ -175,7 +158,7 @@ public class CorebootCommitsAllBlocksTests extends AbstractCommitsTests {
         for (int i = 0; i < EXPECTED_RESULTS.length; i++) {
             testCommitFileNames[i] = (String) EXPECTED_RESULTS[i][0];
         }
-        setUp(TEST_COMMITS_DIRECTORY, testCommitFileNames, true);
+        setUp(TEST_COMMITS_DIRECTORY, testCommitFileNames);
     }    
     
     /**
@@ -242,5 +225,5 @@ public class CorebootCommitsAllBlocksTests extends AbstractCommitsTests {
         assertEquals("Variability model changes for test file \"" + testCommitFileName + "\" do not match",
                 expectedVariabilityModelChanges, actualResult.getRelevantVariabilityModelChanges());
     }
-    
+
 }
