@@ -104,7 +104,8 @@ public class CorebootCommitsTests extends AbstractCommitsTests {
             "/src/mainboard/iwill/dk8s2/auto.c"}, false, false},
         {"c3e728f.txt", new String[]{}, true, false},
         {"eedf7a6.txt", new String[]{}, true, true},
-        {"f040858.txt", new String[]{}, true, true}
+        {"f040858.txt", new String[]{}, true, true},
+        {"07f5b62.txt", new String[]{}, false, true}
     };
     
     /**
@@ -229,6 +230,8 @@ public class CorebootCommitsTests extends AbstractCommitsTests {
      */
     @Test
     public void testCorrectBuildChanges() {
+    	System.out.println("expectedBuildChanges: " + expectedBuildChanges);
+    	System.out.println("actual: " + actualResult);
         assertEquals("Build changes for test file \"" + testCommitFileName + "\" do not match",
                 expectedBuildChanges, actualResult.getRelevantBuildChanges());
     }

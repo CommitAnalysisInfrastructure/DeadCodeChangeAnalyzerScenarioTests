@@ -1,0 +1,31 @@
+commit 07f5b62.txt
+Author: Shaunak Saha <shaunak.saha@intel.com>
+Date:   Fri Aug 11 12:33:20 2017 -0700
+
+    soc/intel/common/block: Fix PMC common block dependency
+    
+    This patch fix the dependency for PMC common block code.
+    PMC block use SLP_TYP macros and acpi_sleep_from_pm1
+    function which is defined in arch/acpi.h and guarded
+    by CONFIG_ACPI_INTEL_HARDWARE_SLEEP_VALUES. So we need
+    PMC common block to depend on that config for proper
+    inclusion.
+    
+    Change-Id: I88077626aff3efba0a95b3aaee0dbd71344ccb42
+    Signed-off-by: Shaunak Saha <shaunak.saha@intel.com>
+    Reviewed-on: https://review.coreboot.org/20964
+    Reviewed-by: Aaron Durbin <adurbin@chromium.org>
+    Tested-by: build bot (Jenkins) <no-reply@coreboot.org>
+
+diff --git a/src/soc/intel/common/block/pmc/Kconfig b/src/soc/intel/common/block/pmc/Kconfig
+index 4e10f93537..c00e14c303 100644
+--- a/src/soc/intel/common/block/pmc/Kconfig
++++ b/src/soc/intel/common/block/pmc/Kconfig
+@@ -1,6 +1,7 @@
+ config SOC_INTEL_COMMON_BLOCK_PMC
+ 	depends on SOC_INTEL_COMMON_BLOCK_GPIO
++	depends on ACPI_INTEL_HARDWARE_SLEEP_VALUES
+ 	bool
+ 	help
+ 	  Intel Processor common code for Power Management controller(PMC)
+ 	  subsystem
