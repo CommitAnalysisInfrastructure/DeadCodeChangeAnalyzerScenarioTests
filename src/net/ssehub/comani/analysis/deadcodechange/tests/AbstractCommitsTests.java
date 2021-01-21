@@ -6,9 +6,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Properties;
 
+import net.ssehub.comani.analysis.AnalysisResult;
 import net.ssehub.comani.analysis.AnalysisSetupException;
 import net.ssehub.comani.analysis.deadcodechange.core.DeadCodeChangeAnalyzer;
-import net.ssehub.comani.analysis.deadcodechange.diff.AnalysisResult;
 import net.ssehub.comani.data.CommitQueue;
 import net.ssehub.comani.data.CommitQueue.QueueState;
 import net.ssehub.comani.extraction.ExtractionSetupException;

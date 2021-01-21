@@ -14,8 +14,8 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
+import net.ssehub.comani.analysis.AnalysisResult;
 import net.ssehub.comani.analysis.AnalysisSetupException;
-import net.ssehub.comani.analysis.deadcodechange.diff.AnalysisResult;
 import net.ssehub.comani.extraction.ExtractionSetupException;
 
 /**
@@ -230,8 +230,8 @@ public class CorebootCommitsTests extends AbstractCommitsTests {
      */
     @Test
     public void testCorrectBuildChanges() {
-    	System.out.println("expectedBuildChanges: " + expectedBuildChanges);
-    	System.out.println("actual: " + actualResult);
+        System.out.println("expectedBuildChanges: " + expectedBuildChanges);
+        System.out.println("actual: " + actualResult);
         assertEquals("Build changes for test file \"" + testCommitFileName + "\" do not match",
                 expectedBuildChanges, actualResult.getRelevantBuildChanges());
     }
