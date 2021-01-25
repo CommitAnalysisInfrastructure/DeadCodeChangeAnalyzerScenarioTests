@@ -14,8 +14,8 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
-import net.ssehub.comani.analysis.AnalysisResult;
 import net.ssehub.comani.analysis.AnalysisSetupException;
+import net.ssehub.comani.analysis.VerificationRelevantResult;
 import net.ssehub.comani.extraction.ExtractionSetupException;
 
 /**
@@ -132,11 +132,11 @@ public class CorebootCommitsTests extends AbstractCommitsTests {
     private boolean expectedVariabilityModelChanges;
     
     /**
-     * The actual {@link AnalysisResult} of the commit file for which this test class is currently executed. Its value
-     * is set during {@link #CorebootCommitsAllBlocksTests(String, String[], boolean, boolean)} and by calling 
+     * The actual {@link VerificationRelevantResult} of the commit file for which this test class is currently executed.
+     * Its value is set during {@link #CorebootCommitsAllBlocksTests(String, String[], boolean, boolean)} and by calling
      * {@link #getResult(String)}.
      */
-    private AnalysisResult actualResult;
+    private VerificationRelevantResult actualResult;
     
     /**
      * Constructs a new {@link CorebootCommitsTests} instance.

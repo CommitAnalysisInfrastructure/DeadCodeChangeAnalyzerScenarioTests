@@ -6,8 +6,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Properties;
 
-import net.ssehub.comani.analysis.AnalysisResult;
 import net.ssehub.comani.analysis.AnalysisSetupException;
+import net.ssehub.comani.analysis.VerificationRelevantResult;
 import net.ssehub.comani.analysis.deadcodechange.core.DeadCodeChangeAnalyzer;
 import net.ssehub.comani.data.CommitQueue;
 import net.ssehub.comani.data.CommitQueue.QueueState;
@@ -32,9 +32,9 @@ public abstract class AbstractCommitsTests {
     
     /**
      * The results of the {@link DeadCodeChangeAnalyzer} in terms of the commit id (key) and their specific 
-     * {@link AnalysisResult}s (value).
+     * {@link VerificationRelevantResult}s (value).
      */
-    protected static HashMap<String, AnalysisResult> analysisResults;
+    protected static HashMap<String, VerificationRelevantResult> analysisResults;
     
     /**
      * The regular expression for identifying variability model files.
@@ -128,10 +128,10 @@ public abstract class AbstractCommitsTests {
      * Returns the result of the analysis of the commit denoted by the given commit file name.
      * 
      * @param commitFileName the name of the commit file for which the results should be returned
-     * @return the {@link AnalysisResult} of the given commit file or <code>null</code>, if no results for that commit
-     *         exist
+     * @return the {@link VerificationRelevantResult} of the given commit file or <code>null</code>, if no results for
+     *         that commit exist
      */
-    protected static AnalysisResult getResult(String commitFileName) {
+    protected static VerificationRelevantResult getResult(String commitFileName) {
         return analysisResults.get(commitFileName);
     }
 }
