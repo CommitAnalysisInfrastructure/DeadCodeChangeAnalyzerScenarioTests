@@ -230,8 +230,6 @@ public class CorebootCommitsTests extends AbstractCommitsTests {
      */
     @Test
     public void testCorrectBuildChanges() {
-        System.out.println("expectedBuildChanges: " + expectedBuildChanges);
-        System.out.println("actual: " + actualResult);
         assertEquals("Build changes for test file \"" + testCommitFileName + "\" do not match",
                 expectedBuildChanges, actualResult.getRelevantBuildChanges());
     }

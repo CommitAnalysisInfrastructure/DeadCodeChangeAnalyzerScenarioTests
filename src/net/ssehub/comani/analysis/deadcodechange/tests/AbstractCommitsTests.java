@@ -117,7 +117,7 @@ public abstract class AbstractCommitsTests {
             StringBuilder commitBuilder = new StringBuilder();
             commitBuilder.append(commitFileLines.get(0));
             for (int j = 1; j < commitFileLines.size(); j++) {
-                commitBuilder.append("\n");
+                commitBuilder.append(System.lineSeparator());
                 commitBuilder.append(commitFileLines.get(j));
             }
             commitExtractor.extract(commitBuilder.toString());
